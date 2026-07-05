@@ -5,33 +5,26 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>座枱巴士實時報站系統</title>
   
-  <!-- ==================== PWA 全螢幕/App 化設定 ==================== -->
-  <!-- 告訴 Android Chrome 這是一個 Web App -->
+  <!-- PWA 全螢幕/App 化設定 -->
   <meta name="mobile-web-app-capable" content="yes">
-  <!-- 告訴 iOS Safari 這是 App -->
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="巴士報站">
-  <!-- 設定狀態欄與主題顏色 -->
   <meta name="theme-color" content="#0d0d0d">
   
-  <!-- 連結至 App 設定檔 (關鍵所在！) -->
   <link rel="manifest" href="manifest.json">
-  <!-- ============================================================= -->
 
-  <!-- 引入 Tailwind CSS 方便排版與美化 -->
+  <!-- 引入 Tailwind CSS 與 Font Awesome 圖標 -->
   <script src="https://cdn.tailwindcss.com"></script>
-  <!-- 引入 Font Awesome 圖標 -->
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
   <style>
-    /* 仿巴士電子報站牌的復古字體與顏色 */
     @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Noto+Sans+HK:wght@400;700;900&display=swap');
     
     body {
       font-family: 'Noto Sans HK', sans-serif;
       background-color: #0d0d0d;
       color: #f3f4f6;
-      overflow: hidden; /* 隱藏滾動條，保持座枱式乾淨畫面 */
+      overflow: hidden;
       height: 100vh;
       width: 100vw;
     }
@@ -40,19 +33,18 @@
       font-family: 'Share Tech Mono', 'Noto Sans HK', monospace;
     }
 
-    /* 橘黃色 LED 發光效果 */
+    /* 橘黃色 LED */
     .led-orange {
       color: #ff9f0a;
       text-shadow: 0 0 8px rgba(255, 159, 10, 0.6);
     }
 
-    /* 綠色 LED 發光效果（用於即將到達或首班車） */
+    /* 綠色 LED */
     .led-green {
       color: #30d158;
       text-shadow: 0 0 8px rgba(48, 209, 88, 0.6);
     }
 
-    /* 自訂滾動條（用於設定視窗及建議選單） */
     .custom-scrollbar::-webkit-scrollbar {
       width: 6px;
     }
@@ -70,46 +62,68 @@
 </head>
 <body class="flex flex-col justify-between p-4 relative">
 
-  <!-- 頂部狀態欄 -->
-  <header class="flex justify-between items-center border-b border-zinc-800 pb-2 z-10 shrink-0">
-    <div class="flex items-center gap-2">
-      <div id="status-indicator" class="w-3 h-3 rounded-full bg-orange-500 animate-pulse" title="正在載入路線資訊..."></div>
-      <span id="status-text" class="text-xs text-zinc-400 font-mono tracking-widest uppercase">KMB LIVE (載入中)</span>
+  <!-- 頂部狀態欄 (支持放大/縮小模式 & 獨立公司連線狀態) -->
+  <header id="top-header" class="flex justify-between items-center border-b border-zinc-800 pb-2 z-10 shrink-0 transition-all duration-300">
+    <!-- 獨立巴士公司連線狀態區 -->
+    <div id="status-container" class="flex flex-wrap items-center gap-3 transition-all duration-300 text-[10px] md:text-xs">
+      <span class="text-zinc-500 font-bold transition-all duration-300">連線:</span>
+      <!-- 九巴 -->
+      <div id="status-kmb" class="flex items-center gap-1 bg-zinc-900 px-2 py-0.5 rounded border border-zinc-800 transition-all duration-300">
+        <span id="dot-kmb" class="w-2 h-2 rounded-full bg-orange-500 animate-pulse transition-all duration-300"></span>
+        <span class="font-bold text-amber-500 transition-all duration-300">KMB (載入中)</span>
+      </div>
+      <!-- 城巴 -->
+      <div id="status-ctb" class="flex items-center gap-1 bg-zinc-900 px-2 py-0.5 rounded border border-zinc-800 transition-all duration-300">
+        <span id="dot-ctb" class="w-2 h-2 rounded-full bg-orange-500 animate-pulse transition-all duration-300"></span>
+        <span class="font-bold text-amber-500 transition-all duration-300">CTB (載入中)</span>
+      </div>
+      <!-- 嶼巴 -->
+      <div id="status-nlb" class="flex items-center gap-1 bg-zinc-900 px-2 py-0.5 rounded border border-zinc-800 transition-all duration-300">
+        <span id="dot-nlb" class="w-2 h-2 rounded-full bg-orange-500 animate-pulse transition-all duration-300"></span>
+        <span class="font-bold text-amber-500 transition-all duration-300">NLB (載入中)</span>
+      </div>
     </div>
-    <div class="flex items-center gap-4">
+
+    <div class="flex items-center gap-3">
       <!-- 系統時鐘 -->
-      <span id="system-clock" class="text-sm font-bold text-zinc-300 font-mono">12:00:00</span>
-      <!-- 設定按鈕 -->
-      <button id="btn-toggle-settings" class="text-zinc-400 hover:text-white transition-colors p-1" title="設定路線">
-        <i class="fa-solid fa-gear text-lg"></i>
+      <span id="system-clock" class="text-sm font-bold text-zinc-300 font-mono mr-2 transition-all duration-300">12:00:00</span>
+      
+      <!-- 放大/縮小按鈕 -->
+      <button id="btn-toggle-zoom" class="text-zinc-400 hover:text-white transition-all p-1.5 rounded bg-zinc-900 border border-zinc-800 hover:border-zinc-700 flex items-center gap-1.5 transition-all duration-300" title="切換放大/縮小模式">
+        <i id="zoom-icon" class="fa-solid fa-magnifying-glass-plus text-base text-zinc-400"></i>
+        <span id="zoom-text" class="text-xs font-bold text-zinc-300 hidden md:inline">放大/縮小</span>
+      </button>
+
+      <!-- 搜尋及設定按鈕 -->
+      <button id="btn-toggle-settings" class="text-zinc-400 hover:text-white transition-all p-1.5 rounded bg-zinc-900 border border-zinc-800 hover:border-zinc-700 flex items-center gap-1.5 transition-all duration-300" title="搜尋及設定路線">
+        <i class="fa-solid fa-magnifying-glass text-base"></i>
+        <span id="search-btn-text" class="text-xs font-bold text-zinc-300 hidden md:inline">搜尋/設定</span>
       </button>
     </div>
   </header>
 
-  <!-- 主顯示區（我的最愛巴士牌） -->
+  <!-- 主顯示區 -->
   <main id="main-display" class="flex-1 flex flex-col justify-center gap-3 my-4 overflow-hidden">
-    <!-- 這裡會由 JavaScript 根據儲存的「我的最愛」動態生成巴士牌卡片 -->
     <div id="no-data-tip" class="text-center text-zinc-500 py-10 flex flex-col items-center justify-center gap-4 flex-1">
       <i class="fa-solid fa-bus text-5xl text-zinc-700 animate-bounce"></i>
       <p class="text-lg">未加入任何路線</p>
-      <p class="text-xs text-zinc-600">請點擊右上角 <i class="fa-solid fa-gear"></i> 開始設定你的桌面報站板</p>
+      <p class="text-xs text-zinc-600">請點擊右上角 <i class="fa-solid fa-magnifying-glass"></i> 開始設定你的多公司報站板</p>
     </div>
   </main>
 
-  <!-- 底部更新時間提示 -->
-  <footer class="flex justify-between items-center text-[10px] text-zinc-500 border-t border-zinc-900 pt-2 shrink-0">
+  <!-- 底部更新時間提示 (支持放大/縮小模式) -->
+  <footer id="bottom-footer" class="flex justify-between items-center text-[10px] text-zinc-500 border-t border-zinc-900 pt-2 shrink-0 transition-all duration-300">
     <span id="last-update">最後更新: 未更新</span>
     <span class="flex items-center gap-1">
-      <span class="inline-block w-2 h-2 rounded-full bg-orange-500"></span>
-      每 30 秒自動更新
+      <span id="update-dot" class="inline-block w-2 h-2 rounded-full bg-orange-500"></span>
+      <span id="update-text">每 30 秒自動更新 (支援 KMB | CTB | NLB)</span>
     </span>
   </footer>
 
-  <!-- ==================== 設定彈出視窗 ==================== -->
+  <!-- 設定彈出視窗 -->
   <div id="settings-modal" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
     <div class="bg-zinc-900 border border-zinc-800 w-full max-w-lg rounded-xl flex flex-col max-h-[85vh] shadow-2xl">
       
-      <!-- 視窗頭部 -->
       <div class="p-4 border-b border-zinc-800 flex justify-between items-center">
         <h3 class="font-bold text-white flex items-center gap-2">
           <i class="fa-solid fa-sliders text-orange-500"></i> 設定我的最愛路線
@@ -117,20 +131,15 @@
         <button id="btn-close-settings" class="text-zinc-400 hover:text-white text-xl">&times;</button>
       </div>
 
-      <!-- 視窗內容 (可滾動) -->
       <div class="p-4 overflow-y-auto flex-1 custom-scrollbar space-y-4">
         
         <!-- 第一步：搜尋巴士路線 -->
         <div class="space-y-2">
-          <label class="text-xs font-semibold text-zinc-400 block">第一步：搜尋九巴路線</label>
+          <label class="text-xs font-semibold text-zinc-400 block">第一步：搜尋路線 (支援九巴、城巴、嶼巴)</label>
           <div class="flex gap-2 relative">
-            <!-- 搜尋輸入框容器 -->
             <div class="relative flex-1">
-              <input type="text" id="input-route" autocomplete="off" placeholder="例如: 968, 1A, 268C" class="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-orange-500 uppercase font-mono">
-              <!-- 路線自動建議下拉選單 -->
-              <div id="suggestions-box" class="absolute left-0 right-0 mt-1 bg-zinc-800 border border-zinc-700 rounded-lg max-h-48 overflow-y-auto z-50 hidden custom-scrollbar shadow-xl">
-                <!-- 建議路線將由 JS 動態生成 -->
-              </div>
+              <input type="text" id="input-route" autocomplete="off" placeholder="例如: 960, 6A, B2P, 1A" class="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-orange-500 uppercase font-mono">
+              <div id="suggestions-box" class="absolute left-0 right-0 mt-1 bg-zinc-800 border border-zinc-700 rounded-lg max-h-48 overflow-y-auto z-50 hidden custom-scrollbar shadow-xl"></div>
             </div>
             <button id="btn-search" class="bg-orange-600 hover:bg-orange-500 text-white px-4 py-2 rounded-lg font-bold transition-colors shrink-0">
               搜尋
@@ -138,15 +147,13 @@
           </div>
         </div>
 
-        <!-- 第二步：選擇方向 (搜尋路線後顯示) -->
+        <!-- 第二步：選擇方向 -->
         <div id="section-bound" class="space-y-2 hidden">
           <label class="text-xs font-semibold text-zinc-400 block">第二步：選擇行車方向</label>
-          <div class="grid grid-cols-2 gap-2" id="bound-container">
-            <!-- 由 JS 動態生成方向按鈕 -->
-          </div>
+          <div class="grid grid-cols-1 gap-2" id="bound-container"></div>
         </div>
 
-        <!-- 第三步：選擇車站 (選擇方向後顯示) -->
+        <!-- 第三步：選擇車站 -->
         <div id="section-stop" class="space-y-2 hidden">
           <label class="text-xs font-semibold text-zinc-400 block">第三步：選擇上車車站</label>
           <div class="relative">
@@ -161,16 +168,14 @@
 
         <!-- 我的最愛清單 -->
         <div class="pt-4 border-t border-zinc-800">
-          <label class="text-xs font-semibold text-zinc-400 block mb-2">已儲存的路線 (最多建議 4-5 條以保持桌面字體大小)</label>
+          <label class="text-xs font-semibold text-zinc-400 block mb-2">已儲存的路線 (最多建議 4-5 條)</label>
           <div id="favorite-list" class="space-y-2">
-            <!-- 已儲存路線列表 -->
             <p class="text-zinc-600 text-xs text-center py-4">暫無儲存路線</p>
           </div>
         </div>
 
       </div>
 
-      <!-- 視窗底部 -->
       <div class="p-4 border-t border-zinc-800 flex justify-end">
         <button id="btn-save-confirm" class="bg-zinc-800 hover:bg-zinc-700 text-white px-6 py-2 rounded-lg font-semibold transition-colors">
           完成設定
@@ -180,32 +185,45 @@
     </div>
   </div>
 
-  <!-- 吐司通知提示 (代替不友善的 alert) -->
+  <!-- 吐司通知提示 -->
   <div id="toast" class="fixed bottom-12 left-1/2 transform -translate-x-1/2 bg-zinc-800 border border-zinc-700 text-white text-xs px-4 py-2.5 rounded-full shadow-lg flex items-center gap-2 transition-all duration-300 translate-y-10 opacity-0 pointer-events-none z-50">
     <span id="toast-msg">提示訊息</span>
   </div>
 
-  <!-- ==================== JAVASCRIPT 邏輯區 ==================== -->
+  <!-- JavaScript 邏輯區 -->
   <script>
-    // --- 基礎設定 ---
-    const API_BASE = "https://data.etabus.gov.hk/v1/transport/kmb";
-    
-    // --- 狀態管理 ---
-    let favorites = []; // 格式: [{route, bound, boundName, stopId, stopName, serviceType}]
-    let allRoutes = []; // 預載所有九巴路線，解決直接搜尋 404 問題
-    let currentRouteData = null; // 暫存搜尋到的路線資訊
-    let currentStops = []; // 暫存該方向的所有車站
+    const API_KMB_BASE = "https://data.etabus.gov.hk/v1/transport/kmb";
+    const API_CTB_BASE = "https://rt.data.gov.hk/v1.1/transport/citybus-nwfb";
+    const API_NLB_BASE = "https://rt.data.gov.hk/v2/transport/nlb";
 
-    // --- DOM 元素獲取 ---
+    let favorites = [];
+    let allRoutes = []; // 包含所有公司的路線
+    let currentRouteData = null; 
+    let currentStops = []; 
+    let isZoomedTop = false; // 是否開啟最上方與最下方欄位放大模式
+
+    // 獨立巴士公司加載與重試狀態追蹤
+    let states = {
+      KMB: { loaded: false, retries: 0 },
+      CTB: { loaded: false, retries: 0 },
+      NLB: { loaded: false, retries: 0 }
+    };
+
+    // DOM Elements
+    const domHeader = document.getElementById('top-header');
+    const domFooter = document.getElementById('bottom-footer');
     const domClock = document.getElementById('system-clock');
+    const btnToggleZoom = document.getElementById('btn-toggle-zoom');
+    const zoomIcon = document.getElementById('zoom-icon');
+    const zoomText = document.getElementById('zoom-text');
+    const btnToggleSettings = document.getElementById('btn-toggle-settings');
+    const searchBtnText = document.getElementById('search-btn-text');
+
     const domMainDisplay = document.getElementById('main-display');
     const domNoDataTip = document.getElementById('no-data-tip');
     const domLastUpdate = document.getElementById('last-update');
-    const domStatusIndicator = document.getElementById('status-indicator');
-    const domStatusText = document.getElementById('status-text');
     
     const modalSettings = document.getElementById('settings-modal');
-    const btnToggleSettings = document.getElementById('btn-toggle-settings');
     const btnCloseSettings = document.getElementById('btn-close-settings');
     const btnSaveConfirm = document.getElementById('btn-save-confirm');
 
@@ -222,38 +240,37 @@
     const domToast = document.getElementById('toast');
     const domToastMsg = document.getElementById('toast-msg');
 
-    // ==================== 初始化 ====================
     window.addEventListener('load', async () => {
-      // 1. 載入本地儲存的「我的最愛」
+      // 1. 載入最愛路線
       const saved = localStorage.getItem('desktop_bus_favorites');
       if (saved) {
-        try {
-          favorites = JSON.parse(saved);
-        } catch(e) {
-          favorites = [];
-        }
+        try { favorites = JSON.parse(saved); } catch(e) { favorites = []; }
       }
 
-      // 2. 啟動系統時鐘
+      // 2. 載入放大設定並更新 UI
+      const savedZoom = localStorage.getItem('desktop_bus_zoom');
+      isZoomedTop = savedZoom === 'true';
+      updateHeaderZoomUI();
+
+      // 3. 啟動時鐘與渲染最愛路線 (不等待 API 下載完成，直接渲染！)
       startClock();
-
-      // 3. 渲染主畫面
       renderMainBoard();
-
-      // 4. 背景載入所有九巴路線（供搜尋與即時建議）
-      await preloadAllRoutes();
-
-      // 5. 首次獲取實時 ETA 數據
+      
+      // 4. 立即獲取實時 ETA 數據 (確保一開機立刻看到巴士時間！)
       fetchAndUpdateAllETA();
-
-      // 6. 設定每 30 秒自動更新一次
       setInterval(fetchAndUpdateAllETA, 30000);
 
-      // 綁定所有點擊事件
+      // 5. 背景獨立且可重複嘗試的載入各公司路線數據（用於搜尋聯想，不阻塞主畫面運作）
+      loadKMB();
+      loadCTB();
+      loadNLB();
+
+      // 6. 背景自動為舊最愛路線補齊「途經車站」與修補自癒
+      silentlyUpdateMissingViaStops();
+
       initEventListeners();
     });
 
-    // ==================== 時鐘與通知 ====================
     function startClock() {
       setInterval(() => {
         const now = new Date();
@@ -271,32 +288,179 @@
       }, 3000);
     }
 
-    // ==================== 預載所有九巴路線 ====================
-    async function preloadAllRoutes() {
-      try {
-        const response = await fetch(`${API_BASE}/route`);
-        const result = await response.json();
-        if (result.data && result.data.length > 0) {
-          allRoutes = result.data;
-          
-          // 更新頂部狀態指示燈為綠色
-          domStatusIndicator.className = "w-3 h-3 rounded-full bg-emerald-500 animate-pulse";
-          domStatusText.textContent = "KMB LIVE (已連線)";
-          console.log(`成功預載 ${allRoutes.length} 條九巴路線。`);
-        } else {
-          throw new Error("路線數據為空");
-        }
-      } catch (error) {
-        console.error("預載路線失敗:", error);
-        domStatusIndicator.className = "w-3 h-3 rounded-full bg-red-500";
-        domStatusText.textContent = "KMB LIVE (連線失敗)";
-        showToast("路線清單載入失敗，請重新整理網頁。");
+    // ==================== 智能欄位解析安全獲取器 ====================
+    function getSafeStopName(item) {
+      if (!item) return '未知車站';
+      return item.stopName_tc || 
+             item.stop_name_tc || 
+             item.name_tc || 
+             item.stopName_en || 
+             item.stop_name || 
+             item.stopName ||
+             Object.values(item).find(val => typeof val === 'string' && val.length > 2 && !val.includes('.') && isNaN(val)) ||
+             '未知車站';
+    }
+
+    function getSafeRouteDest(r) {
+      if (!r) return '目的地';
+      return r.dest_tc || 
+             r.dest || 
+             r.destination_tc || 
+             r.routeName_tc || 
+             r.routeName_en || 
+             '目的地';
+    }
+
+    function getSafeRouteOrig(r) {
+      if (!r) return '起點';
+      return r.orig_tc || 
+             r.orig || 
+             r.startPoint_tc || 
+             (r.routeName_tc ? r.routeName_tc.split(' - ')[0] : '起點');
+    }
+
+    // ==================== 獨立狀態 UI 更新 ====================
+    function updateCompanyStatus(co, state) {
+      const dot = document.getElementById(`dot-${co.toLowerCase()}`);
+      const container = document.getElementById(`status-${co.toLowerCase()}`);
+      const label = container ? container.querySelector('span:not([id])') : null;
+
+      if (!dot || !container || !label) return;
+
+      const dotSizeClass = isZoomedTop ? "w-3.5 h-3.5 md:w-4.5 md:h-4.5" : "w-2 h-2";
+      dot.className = `rounded-full transition-all duration-300 ${dotSizeClass}`;
+
+      if (state === 'loading') {
+        dot.className = `rounded-full bg-amber-500 animate-pulse transition-all duration-300 ${dotSizeClass}`;
+        label.textContent = `${co} (載入中)`;
+        label.className = "font-bold text-amber-400 text-[10px] md:text-xs transition-all duration-300";
+      } else if (state === 'success') {
+        dot.className = `rounded-full bg-emerald-500 transition-all duration-300 ${dotSizeClass}`;
+        label.textContent = co;
+        label.className = "font-bold text-zinc-300 text-[10px] md:text-xs transition-all duration-300";
+      } else if (state === 'failed') {
+        dot.className = `rounded-full bg-red-500 animate-pulse transition-all duration-300 ${dotSizeClass}`;
+        label.textContent = `${co} (重試中)`;
+        label.className = "font-bold text-red-500 text-[10px] md:text-xs transition-all duration-300";
+      }
+
+      // 如果在大字模式下微調字體
+      if (isZoomedTop) {
+        label.classList.remove('text-[10px]', 'md:text-xs');
+        label.classList.add('text-xs', 'md:text-base');
       }
     }
 
-    // ==================== 事件綁定 ====================
+    // ==================== 獨立、可重試之背景下載通道 (直至成功) ====================
+    async function loadKMB() {
+      if (states.KMB.loaded) return;
+      updateCompanyStatus('KMB', 'loading');
+      
+      const cacheBust = `_t=${Date.now()}`;
+      try {
+        const res = await fetch(`${API_KMB_BASE}/route?${cacheBust}`);
+        if (!res.ok) throw new Error("KMB HTTP error");
+        const json = await res.json();
+        if (json.data && json.data.length > 0) {
+          const mapped = json.data.map(r => ({
+            co: 'KMB',
+            route: r.route,
+            orig: getSafeRouteOrig(r),
+            dest: getSafeRouteDest(r),
+            bound: r.bound,
+            serviceType: r.service_type
+          }));
+          
+          allRoutes = allRoutes.filter(r => r.co !== 'KMB').concat(mapped);
+          states.KMB.loaded = true;
+          updateCompanyStatus('KMB', 'success');
+          console.log(`[連線] 九巴路線預載成功，共 ${mapped.length} 條。`);
+          return;
+        }
+        throw new Error("KMB data empty");
+      } catch(e) {
+        console.warn("[連線] 九巴 (KMB) 載入失敗，10 秒後將自動重新嘗試...", e);
+      }
+      states.KMB.retries++;
+      updateCompanyStatus('KMB', 'failed');
+      setTimeout(loadKMB, 10000); // 10秒後無限重試
+    }
+
+    async function loadCTB() {
+      if (states.CTB.loaded) return;
+      updateCompanyStatus('CTB', 'loading');
+      
+      const cacheBust = `_t=${Date.now()}`;
+      try {
+        const res = await fetch(`${API_CTB_BASE}/route/ctb?${cacheBust}`);
+        if (!res.ok) throw new Error("CTB HTTP error");
+        const json = await res.json();
+        if (json.data && json.data.length > 0) {
+          const mapped = json.data.map(r => ({
+            co: 'CTB',
+            route: r.route,
+            orig: getSafeRouteOrig(r),
+            dest: getSafeRouteDest(r),
+            bound: r.dir, 
+            serviceType: '1'
+          }));
+          
+          allRoutes = allRoutes.filter(r => r.co !== 'CTB').concat(mapped);
+          states.CTB.loaded = true;
+          updateCompanyStatus('CTB', 'success');
+          console.log(`[連線] 城巴路線預載成功，共 ${mapped.length} 條。`);
+          return;
+        }
+        throw new Error("CTB data empty");
+      } catch(e) {
+        console.warn("[連線] 城巴 (CTB) 載入失敗，10 秒後將自動重新嘗試...", e);
+      }
+      states.CTB.retries++;
+      updateCompanyStatus('CTB', 'failed');
+      setTimeout(loadCTB, 10000); // 10秒後無限重試
+    }
+
+    async function loadNLB() {
+      if (states.NLB.loaded) return;
+      updateCompanyStatus('NLB', 'loading');
+      
+      const cacheBust = `_t=${Date.now()}`;
+      try {
+        const res = await fetch(`${API_NLB_BASE}/route.php?action=list&${cacheBust}`);
+        if (!res.ok) throw new Error("NLB HTTP error");
+        const json = await res.json();
+        if (json.routes && json.routes.length > 0) {
+          const mapped = json.routes.map(r => ({
+            co: 'NLB',
+            route: r.routeNo,
+            routeId: r.routeId,
+            orig: getSafeRouteOrig(r),
+            dest: getSafeRouteDest(r), 
+            bound: 'O', 
+            serviceType: '1'
+          }));
+          
+          allRoutes = allRoutes.filter(r => r.co !== 'NLB').concat(mapped);
+          states.NLB.loaded = true;
+          updateCompanyStatus('NLB', 'success');
+          console.log(`[連線] 嶼巴路線預載成功，共 ${mapped.length} 條。`);
+          
+          // 當嶼巴加載完成後，立刻自動對缺少 routeId 與對目的地顯示為 "目的地" 的最愛路線進行背景自動修復自癒！
+          silentlyUpdateMissingViaStops();
+          fetchAndUpdateAllETA();
+          return;
+        }
+        throw new Error("NLB data empty");
+      } catch(e) {
+        console.warn("[連線] 嶼巴 (NLB) 載入失敗，10 秒後將自動重新嘗試...", e);
+      }
+      states.NLB.retries++;
+      updateCompanyStatus('NLB', 'failed');
+      setTimeout(loadNLB, 10000); // 10秒後無限重試
+    }
+
     function initEventListeners() {
-      // 打開/關閉設定視窗
+      // 搜尋設定按鈕
       btnToggleSettings.addEventListener('click', () => {
         renderSettingsFavorites();
         modalSettings.classList.remove('hidden');
@@ -312,7 +476,14 @@
         fetchAndUpdateAllETA();
       });
 
-      // 搜尋路線
+      // 放大/縮小按鈕切換
+      btnToggleZoom.addEventListener('click', () => {
+        isZoomedTop = !isZoomedTop;
+        localStorage.setItem('desktop_bus_zoom', isZoomedTop);
+        updateHeaderZoomUI();
+        showToast(isZoomedTop ? "已啟用「放大模式」" : "已啟用「縮小模式」");
+      });
+
       btnSearch.addEventListener('click', () => {
         suggestionsBox.classList.add('hidden');
         searchRoute();
@@ -325,21 +496,79 @@
         }
       });
 
-      // 當使用者輸入時，觸發自動建議
       inputRoute.addEventListener('input', handleRouteInput);
 
-      // 點擊網頁外部，關閉自動建議選單
       document.addEventListener('click', (e) => {
         if (!inputRoute.contains(e.target) && !suggestionsBox.contains(e.target)) {
           suggestionsBox.classList.add('hidden');
         }
       });
 
-      // 加入我的最愛
       btnAddFav.addEventListener('click', addToFavorites);
     }
 
-    // ==================== 路線輸入即時建議邏輯 ====================
+    // ==================== 頂部及底部欄放大/縮小 UI 更新 ====================
+    function updateHeaderZoomUI() {
+      const kmbStatus = document.getElementById('status-kmb');
+      const ctbStatus = document.getElementById('status-ctb');
+      const nlbStatus = document.getElementById('status-nlb');
+      const statusContainer = document.getElementById('status-container');
+
+      if (isZoomedTop) {
+        // 1. 放大頂部狀態欄
+        domHeader.className = "flex justify-between items-center border-b-2 border-zinc-700 py-4 md:py-6 px-2 z-10 shrink-0 transition-all duration-300";
+        domClock.className = "text-xl md:text-3xl lg:text-4xl font-black text-orange-400 font-mono mr-2 transition-all duration-300";
+        
+        btnToggleZoom.className = "text-white transition-all p-2.5 md:p-3.5 rounded-lg bg-orange-950/60 border-2 border-orange-500 flex items-center gap-2 text-sm md:text-xl transition-all duration-300";
+        zoomIcon.className = "fa-solid fa-magnifying-glass-minus text-base md:text-2xl text-orange-400";
+        zoomText.className = "text-xs md:text-base font-black text-white";
+        
+        btnToggleSettings.className = "text-zinc-200 hover:text-white transition-all p-2.5 md:p-3.5 rounded-lg bg-zinc-900 border-2 border-zinc-700 hover:border-zinc-500 flex items-center gap-2 text-sm md:text-xl transition-all duration-300";
+        searchBtnText.className = "text-xs md:text-base font-black text-zinc-200";
+
+        // 獨立連線狀態框放大
+        if (statusContainer) statusContainer.className = "flex flex-wrap items-center gap-4 transition-all duration-300 text-sm md:text-lg";
+        [kmbStatus, ctbStatus, nlbStatus].forEach(el => {
+          if (el) el.className = "flex items-center gap-2 bg-zinc-900 px-3 py-1 rounded-lg border-2 border-zinc-800 text-xs md:text-base transition-all duration-300";
+        });
+
+        // 2. 放大底部欄
+        domFooter.className = "flex justify-between items-center text-xs md:text-lg text-zinc-300 font-bold border-t-2 border-zinc-700 py-3 px-2 shrink-0 transition-all duration-300";
+      } else {
+        // 1. 恢復正常精簡頂部欄尺寸
+        domHeader.className = "flex justify-between items-center border-b border-zinc-800 pb-2 z-10 shrink-0 transition-all duration-300";
+        domClock.className = "text-sm font-bold text-zinc-300 font-mono mr-2 transition-all duration-300";
+        
+        btnToggleZoom.className = "text-zinc-400 hover:text-white transition-all p-1.5 rounded bg-zinc-900 border border-zinc-800 hover:border-zinc-700 flex items-center gap-1.5 transition-all duration-300";
+        zoomIcon.className = "fa-solid fa-magnifying-glass-plus text-base text-zinc-400";
+        zoomText.className = "text-xs font-bold text-zinc-300";
+        
+        btnToggleSettings.className = "text-zinc-400 hover:text-white transition-all p-1.5 rounded bg-zinc-900 border border-zinc-800 hover:border-zinc-700 flex items-center gap-1.5 transition-all duration-300";
+        searchBtnText.className = "text-xs font-bold text-zinc-300";
+
+        // 獨立連線狀態框還原
+        if (statusContainer) statusContainer.className = "flex flex-wrap items-center gap-3 transition-all duration-300 text-[10px] md:text-xs";
+        [kmbStatus, ctbStatus, nlbStatus].forEach(el => {
+          if (el) el.className = "flex items-center gap-1 bg-zinc-900 px-2 py-0.5 rounded border border-zinc-800 text-[10px] md:text-xs transition-all duration-300";
+        });
+
+        // 2. 恢復正常精簡底部欄
+        domFooter.className = "flex justify-between items-center text-[10px] text-zinc-500 border-t border-zinc-900 pt-2 shrink-0 transition-all duration-300";
+      }
+
+      // 重繪所有當前的連線狀態
+      ['KMB', 'CTB', 'NLB'].forEach(co => {
+        if (states[co].loaded) {
+          updateCompanyStatus(co, 'success');
+        } else if (states[co].retries > 0) {
+          updateCompanyStatus(co, 'failed');
+        } else {
+          updateCompanyStatus(co, 'loading');
+        }
+      });
+    }
+
+    // ==================== 自動聯想搜尋 ====================
     function handleRouteInput() {
       const query = inputRoute.value.trim().toUpperCase();
       if (!query) {
@@ -348,44 +577,65 @@
       }
 
       if (allRoutes.length === 0) {
-        return; // 數據庫尚未加載完成
+        suggestionsBox.innerHTML = `<div class="px-3 py-2 text-zinc-500 text-xs font-bold">預載路線中，請稍候...</div>`;
+        suggestionsBox.classList.remove('hidden');
+        return;
       }
 
-      // 1. 取得不重複的路線代號清單
-      const uniqueRouteNames = [...new Set(allRoutes.map(item => item.route))];
+      const uniqueRoutes = [];
+      const seen = new Set();
 
-      // 2. 進行搜尋過濾：優先篩選「以 query 開頭」的路線，再篩選「包含 query」的路線
-      const startsWithMatches = uniqueRouteNames.filter(r => r.startsWith(query));
-      const containsMatches = uniqueRouteNames.filter(r => r.includes(query) && !r.startsWith(query));
-      
-      // 合併排序，最多顯示 15 個建議
-      const combinedMatches = [...startsWithMatches, ...containsMatches].slice(0, 15);
+      allRoutes.forEach(r => {
+        const key = `${r.co}_${r.route}`;
+        if (!seen.has(key) && r.route.startsWith(query)) {
+          seen.add(key);
+          uniqueRoutes.push(r);
+        }
+      });
 
-      if (combinedMatches.length > 0) {
-        suggestionsBox.innerHTML = combinedMatches.map(route => `
-          <div class="px-3 py-2.5 hover:bg-orange-600/20 active:bg-orange-600/40 cursor-pointer text-white font-mono font-bold border-b border-zinc-800/60 last:border-b-0 transition-colors"
-               onclick="selectSuggestion('${route}')">
-            ${route}
-          </div>
-        `).join('');
+      if (uniqueRoutes.length < 10) {
+        allRoutes.forEach(r => {
+          const key = `${r.co}_${r.route}`;
+          if (!seen.has(key) && r.route.includes(query)) {
+            seen.add(key);
+            uniqueRoutes.push(r);
+          }
+        });
+      }
+
+      const matches = uniqueRoutes.slice(0, 15);
+
+      if (matches.length > 0) {
+        suggestionsBox.innerHTML = matches.map(r => {
+          let coColor = "bg-red-600";
+          if (r.co === 'CTB') coColor = "bg-yellow-500 text-black";
+          if (r.co === 'NLB') coColor = "bg-green-600";
+
+          return `
+            <div class="px-3 py-2 hover:bg-zinc-700 cursor-pointer flex justify-between items-center border-b border-zinc-800/60 last:border-b-0"
+                 onclick="selectSuggestion('${r.route}', '${r.co}')">
+              <span class="font-mono font-bold text-white">${r.route}</span>
+              <span class="text-[10px] px-1.5 py-0.5 rounded font-bold ${coColor}">${r.co}</span>
+            </div>
+          `;
+        }).join('');
         suggestionsBox.classList.remove('hidden');
       } else {
         suggestionsBox.classList.add('hidden');
       }
     }
 
-    // 當使用者點擊建議清單中的項目
-    window.selectSuggestion = function(route) {
+    window.selectSuggestion = function(route, co) {
       inputRoute.value = route;
       suggestionsBox.classList.add('hidden');
-      searchRoute(); // 自動觸發搜尋
+      searchRoute(co); 
     };
 
-    // ==================== 搜尋巴士路線 (本地篩選) ====================
-    async function searchRoute() {
+    // ==================== 搜尋路線 (加入智能即時 API 雙重備份) ====================
+    async function searchRoute(targetCo = null) {
       const route = inputRoute.value.trim().toUpperCase();
       if (!route) {
-        showToast("請輸入巴士路線！");
+        showToast("請輸入路線！");
         return;
       }
 
@@ -393,23 +643,80 @@
       btnSearch.textContent = "搜尋中...";
 
       try {
-        // 如果先前載入失敗，再次嘗試載入
-        if (allRoutes.length === 0) {
-          await preloadAllRoutes();
+        // 1. 先從本地預載好的清單中找
+        let filtered = allRoutes.filter(r => r.route === route);
+        if (targetCo) {
+          filtered = filtered.filter(r => r.co === targetCo);
         }
 
-        // 直接在本地預載好的數組中篩選
-        const filteredRoutes = allRoutes.filter(item => item.route === route);
-
-        if (filteredRoutes.length > 0) {
-          currentRouteData = filteredRoutes;
-          showBoundSelection(filteredRoutes);
-        } else {
-          showToast(`找不到路線 ${route}，請檢查輸入是否正確（如 1A, 968）。`);
-          resetSearchSteps(false);
+        if (filtered.length > 0) {
+          currentRouteData = filtered;
+          showBoundSelection(filtered);
+          return;
         }
+
+        // 2. 本地找不到時，直接發起網絡即時查詢
+        showToast("正在直接連線查詢巴士路線...");
+
+        // 嘗試直接查詢九巴 (KMB) 的路線站點接口
+        try {
+          const kmbRes = await fetch(`${API_KMB_BASE}/route-stop/${route}/outbound/1`);
+          if (kmbRes.ok) {
+            const kmbJson = await kmbRes.json();
+            if (kmbJson.data && kmbJson.data.length > 0) {
+              const firstStopId = kmbJson.data[0].stop;
+              const lastStopId = kmbJson.data[kmbJson.data.length - 1].stop;
+              
+              let firstStopName = "起點";
+              let lastStopName = "終點";
+              
+              try {
+                const fRes = await fetch(`${API_KMB_BASE}/stop/${firstStopId}`);
+                const fJson = await fRes.json();
+                firstStopName = getSafeStopName(fJson.data);
+                
+                const lRes = await fetch(`${API_KMB_BASE}/stop/${lastStopId}`);
+                const lJson = await lRes.json();
+                lastStopName = getSafeStopName(lJson.data);
+              } catch(e) {}
+
+              const kmbDirectRoute = [
+                { co: 'KMB', route: route, orig: firstStopName, dest: lastStopName, bound: 'O', serviceType: '1' },
+                { co: 'KMB', route: route, orig: lastStopName, dest: firstStopName, bound: 'I', serviceType: '1' }
+              ];
+              
+              allRoutes.push(...kmbDirectRoute);
+              currentRouteData = kmbDirectRoute;
+              showBoundSelection(kmbDirectRoute);
+              return;
+            }
+          }
+        } catch(e) { console.warn("直接連線 KMB 失敗:", e); }
+
+        // 嘗試直接查詢城巴 (CTB) 接口
+        try {
+          const ctbRes = await fetch(`${API_CTB_BASE}/route/ctb/${route}`);
+          if (ctbRes.ok) {
+            const ctbJson = await ctbRes.json();
+            if (ctbJson.data) {
+              const r = ctbJson.data;
+              const ctbDirectRoute = [
+                { co: 'CTB', route: route, orig: r.orig_tc, dest: r.dest_tc, bound: 'O', serviceType: '1' },
+                { co: 'CTB', route: route, orig: r.dest_tc, dest: r.dest_tc, bound: 'I', serviceType: '1' }
+              ];
+              allRoutes.push(...ctbDirectRoute);
+              currentRouteData = ctbDirectRoute;
+              showBoundSelection(ctbDirectRoute);
+              return;
+            }
+          }
+        } catch(e) { console.warn("直接連線 CTB 失敗:", e); }
+
+        // 如果所有方式都查不到
+        showToast(`找不到路線 ${route}，請檢查輸入是否正確。`);
+        resetSearchSteps(false);
+
       } catch (error) {
-        console.error("搜尋路線失敗:", error);
         showToast("搜尋出錯，請確保網絡正常。");
       } finally {
         btnSearch.disabled = false;
@@ -417,7 +724,6 @@
       }
     }
 
-    // 重置後續選擇步驟
     function resetSearchSteps(resetInput = true) {
       if (resetInput) inputRoute.value = "";
       sectionBound.classList.add('hidden');
@@ -428,144 +734,277 @@
       currentStops = [];
     }
 
-    // ==================== 顯示方向選擇 ====================
+    // ==================== 顯示方向選擇 (內置合併相同路線相同目的地邏輯) ====================
     function showBoundSelection(routeOptions) {
       boundContainer.innerHTML = "";
       sectionBound.classList.remove('hidden');
-      sectionStop.classList.add('hidden'); // 先隱藏第三步
+      sectionStop.classList.add('hidden');
+
+      const mergedOptions = [];
+      const seenKeys = new Set();
 
       routeOptions.forEach(opt => {
-        const boundText = opt.bound === 'O' ? '去程' : '回程';
+        const destTrimmed = opt.dest ? opt.dest.trim() : "";
+        const key = `${opt.co}_${opt.bound}_${destTrimmed}`;
+        
+        if (!seenKeys.has(key)) {
+          seenKeys.add(key);
+          mergedOptions.push(opt);
+        } else {
+          const existingIndex = mergedOptions.findIndex(o => `${o.co}_${o.bound}_${o.dest ? o.dest.trim() : ""}` === key);
+          if (existingIndex !== -1) {
+            const existing = mergedOptions[existingIndex];
+            const currentType = parseInt(opt.serviceType) || 1;
+            const existingType = parseInt(existing.serviceType) || 1;
+            if (currentType < existingType) {
+              mergedOptions[existingIndex] = opt; 
+            }
+          }
+        }
+      });
+
+      mergedOptions.forEach(opt => {
+        let boundText = opt.bound === 'O' ? '去程' : '回程';
+        if (opt.co === 'NLB') boundText = "雙向/循環線";
+
+        let coColor = "border-red-500 text-red-500";
+        if (opt.co === 'CTB') coColor = "border-yellow-500 text-yellow-500";
+        if (opt.co === 'NLB') coColor = "border-green-500 text-green-500";
+
         const btn = document.createElement('button');
-        btn.className = "bg-zinc-800 hover:bg-orange-900 border border-zinc-700 text-white rounded-lg p-3 text-sm transition-colors text-left flex flex-col justify-between";
+        btn.className = "bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-white rounded-lg p-3 text-sm transition-colors text-left flex justify-between items-center w-full";
         btn.innerHTML = `
-          <span class="text-xs text-zinc-400 font-bold">${boundText} (服務類型 ${opt.service_type})</span>
-          <span class="text-base text-orange-400 font-bold mt-1 truncate">${opt.dest_tc}</span>
+          <div>
+            <span class="text-xs text-zinc-400 font-bold">${boundText}</span>
+            <span class="text-base text-zinc-100 font-bold block mt-0.5">${opt.dest}</span>
+          </div>
+          <span class="text-xs font-bold px-2 py-0.5 border rounded shrink-0 ml-2 ${coColor}">${opt.co}</span>
         `;
         btn.addEventListener('click', () => {
-          // 選定方向，加載車站
           selectBound(opt);
-          // 設選中樣式
-          Array.from(boundContainer.children).forEach(c => c.classList.remove('border-orange-500', 'bg-orange-950/40'));
-          btn.classList.add('border-orange-500', 'bg-orange-950/40');
+          Array.from(boundContainer.children).forEach(c => c.classList.remove('border-orange-500', 'bg-orange-950/20'));
+          btn.classList.add('border-orange-500', 'bg-orange-950/20');
         });
         boundContainer.appendChild(btn);
       });
     }
 
-    // ==================== 選擇方向，載入車站 (API) ====================
-    async function selectBound(routeOption) {
-      const { route, bound, service_type, dest_tc } = routeOption;
-      
+    // ==================== 選擇方向，載入車站 ====================
+    async function selectBound(opt) {
       selectStop.innerHTML = '<option value="">讀取車站中...</option>';
       sectionStop.classList.remove('hidden');
+      currentStops = [];
 
       try {
-        // 1. 抓取這條路線該方向的所有車站順序 (Route-Stop API)
-        const directionStr = bound === 'O' ? 'outbound' : 'inbound';
-        const urlStops = `${API_BASE}/route-stop/${route}/${directionStr}/${service_type}`;
-        const response = await fetch(urlStops);
-        const result = await response.json();
-
-        if (!result.data || result.data.length === 0) {
-          showToast("無法載入車站列表。");
-          return;
-        }
-        
-        selectStop.innerHTML = '<option value="">-- 請選擇車站 --</option>';
-        currentStops = [];
-
-        showToast("正在建立車站清單，請稍候...");
-        
-        // 限制只獲取前 50 個站，防止特別長途的路線卡死
-        const stopsToFetch = result.data.slice(0, 50);
-
-        // 批次下載車站名稱 (Promise.all)
-        const stopNamePromises = stopsToFetch.map(async (item) => {
-          try {
-            const stopRes = await fetch(`${API_BASE}/stop/${item.stop}`);
-            const stopData = await stopRes.json();
-            return {
-              seq: item.seq,
-              stopId: item.stop,
-              stopName: stopData.data ? stopData.data.name_tc : '未知車站',
-              route: route,
-              bound: bound,
-              serviceType: service_type,
-              destName: dest_tc
-            };
-          } catch(e) {
-            return { seq: item.seq, stopId: item.stop, stopName: '讀取失敗', route, bound, serviceType: service_type, destName: dest_tc };
+        if (opt.co === 'KMB') {
+          const dirStr = opt.bound === 'O' ? 'outbound' : 'inbound';
+          const res = await fetch(`${API_KMB_BASE}/route-stop/${opt.route}/${dirStr}/${opt.serviceType}`);
+          const json = await res.json();
+          if (json.data) {
+            showToast("正在載入車站清單...");
+            const promises = json.data.slice(0, 50).map(async (item) => {
+              const r = await fetch(`${API_KMB_BASE}/stop/${item.stop}`);
+              const d = await r.json();
+              return {
+                seq: item.seq,
+                stopId: item.stop,
+                stopName: getSafeStopName(d.data),
+                route: opt.route,
+                bound: opt.bound,
+                serviceType: opt.serviceType,
+                co: 'KMB',
+                destName: opt.dest
+              };
+            });
+            currentStops = await Promise.all(promises);
           }
-        });
+        } 
+        else if (opt.co === 'CTB') {
+          const dirStr = opt.bound === 'O' ? 'outbound' : 'inbound';
+          const res = await fetch(`${API_CTB_BASE}/stop/ctb/${opt.route}/${dirStr}`);
+          const json = await res.json();
+          if (json.data) {
+            showToast("正在載入車站清單...");
+            const promises = json.data.slice(0, 50).map(async (item) => {
+              const r = await fetch(`${API_CTB_BASE}/stop/${item.stop}`);
+              const d = await r.json();
+              return {
+                seq: item.seq,
+                stopId: item.stop,
+                stopName: getSafeStopName(d.data),
+                route: opt.route,
+                bound: opt.bound,
+                serviceType: '1',
+                co: 'CTB',
+                destName: opt.dest
+              };
+            });
+            currentStops = await Promise.all(promises);
+          }
+        }
+        else if (opt.co === 'NLB') {
+          const res = await fetch(`${API_NLB_BASE}/stop.php?action=list&routeId=${opt.routeId}`);
+          const json = await res.json();
+          if (json.stops) {
+            currentStops = json.stops.map((item, idx) => ({
+              seq: idx + 1,
+              stopId: item.stopId,
+              stopName: getSafeStopName(item), 
+              route: opt.route,
+              routeId: opt.routeId, 
+              bound: 'O',
+              serviceType: '1',
+              co: 'NLB',
+              destName: opt.dest
+            }));
+          }
+        }
 
-        currentStops = await Promise.all(stopNamePromises);
-
-        // 渲染到下拉選單
         selectStop.innerHTML = '<option value="">-- 請選擇車站 --</option>';
         currentStops.forEach(stop => {
-          const opt = document.createElement('option');
-          opt.value = stop.stopId;
-          opt.textContent = `${stop.seq}. ${stop.stopName}`;
-          selectStop.appendChild(opt);
+          const o = document.createElement('option');
+          o.value = stop.stopId;
+          o.textContent = `${stop.seq}. ${stop.stopName}`;
+          selectStop.appendChild(o);
         });
-
         showToast("車站載入完成！");
 
-      } catch (error) {
-        console.error("載入車站失敗:", error);
-        showToast("載入車站發生錯誤。");
+      } catch (e) {
+        console.error(e);
+        showToast("載入車站失敗。");
         selectStop.innerHTML = '<option value="">載入失敗</option>';
       }
     }
 
-    // ==================== 加入我的最愛 ====================
+    // ==================== 加入我的最愛 (含途經車站獲取) ====================
     function addToFavorites() {
       const selectedStopId = selectStop.value;
       if (!selectedStopId) {
-        showToast("請先選擇上車車站！");
+        showToast("請選擇車站！");
         return;
       }
 
       const stopObj = currentStops.find(s => s.stopId === selectedStopId);
       if (!stopObj) return;
 
-      // 檢查是否已存在
       const isExist = favorites.some(fav => 
         fav.route === stopObj.route && 
-        fav.bound === stopObj.bound && 
+        fav.co === stopObj.co &&
         fav.stopId === stopObj.stopId &&
-        fav.serviceType === stopObj.serviceType
+        fav.bound === stopObj.bound
       );
 
       if (isExist) {
-        showToast("此車站路線已在「我的最愛」中！");
+        showToast("該路線車站已在最愛清單中。");
         return;
       }
 
-      // 新增至最愛
+      const stopIndex = currentStops.findIndex(s => s.stopId === selectedStopId);
+      const viaStops = currentStops.slice(stopIndex + 1, stopIndex + 4).map(s => s.stopName);
+
       favorites.push({
         route: stopObj.route,
+        routeId: stopObj.routeId || null,
         bound: stopObj.bound,
         boundName: stopObj.destName,
         stopId: stopObj.stopId,
         stopName: stopObj.stopName,
-        serviceType: stopObj.serviceType
+        serviceType: stopObj.serviceType,
+        co: stopObj.co,
+        viaStops: viaStops 
       });
 
-      // 儲存
       saveFavorites();
       renderSettingsFavorites();
       resetSearchSteps(true);
-      showToast("成功加入我的最愛！");
+      showToast("已成功加入！");
     }
 
-    // 儲存至本地瀏覽器
+    // 智能升級舊數據：自動在背景補全缺失的 routeId 或目的地名稱 (viaStops)，並更新至 localStorage 存檔
+    async function silentlyUpdateMissingViaStops() {
+      let updated = false;
+      for (let i = 0; i < favorites.length; i++) {
+        const fav = favorites[i];
+
+        // 1. [自動自癒] 如果是嶼巴且缺少 routeId，嘗試從已載入的 allRoutes 中動態復原
+        if (fav.co === 'NLB' && !fav.routeId) {
+          const foundRoute = allRoutes.find(r => r.co === 'NLB' && r.route === fav.route);
+          if (foundRoute) {
+            fav.routeId = foundRoute.routeId;
+            updated = true;
+            console.log(`[自動修復] 成功修復並補全舊嶼巴路線 ${fav.route} 的 routeId (${fav.routeId})。`);
+          }
+        }
+
+        // 2. [自動自癒] 補全可能顯示為 "目的地" 或 undefined 的正確行車目的地
+        if ((!fav.boundName || fav.boundName === '目的地') && allRoutes.length > 0) {
+          const foundRoute = allRoutes.find(r => r.co === fav.co && r.route === fav.route && r.bound === fav.bound);
+          if (foundRoute) {
+            fav.boundName = getSafeRouteDest(foundRoute);
+            updated = true;
+            console.log(`[自動修復] 成功將最愛路線 ${fav.route} 的目的地名稱恢復為 ${fav.boundName}。`);
+          }
+        }
+
+        // 3. 補全缺失的途經站名稱 (viaStops)
+        if (!fav.viaStops || fav.viaStops.length === 0) {
+          try {
+            let fetchedStops = [];
+            if (fav.co === 'KMB') {
+              const dirStr = fav.bound === 'O' ? 'outbound' : 'inbound';
+              const res = await fetch(`${API_KMB_BASE}/route-stop/${fav.route}/${dirStr}/${fav.serviceType}`);
+              const json = await res.json();
+              if (json.data) {
+                const promises = json.data.slice(0, 50).map(async (item) => {
+                  const r = await fetch(`${API_KMB_BASE}/stop/${item.stop}`);
+                  const d = await r.json();
+                  return { stopId: item.stop, stopName: getSafeStopName(d.data) };
+                });
+                fetchedStops = await Promise.all(promises);
+              }
+            } else if (fav.co === 'CTB') {
+              const dirStr = fav.bound === 'O' ? 'outbound' : 'inbound';
+              const res = await fetch(`${API_CTB_BASE}/stop/ctb/${fav.route}/${dirStr}`);
+              const json = await res.json();
+              if (json.data) {
+                const promises = json.data.slice(0, 50).map(async (item) => {
+                  const r = await fetch(`${API_CTB_BASE}/stop/${item.stop}`);
+                  const d = await r.json();
+                  return { stopId: item.stop, stopName: getSafeStopName(d.data) };
+                });
+                fetchedStops = await Promise.all(promises);
+              }
+            } else if (fav.co === 'NLB' && fav.routeId) {
+              const res = await fetch(`${API_NLB_BASE}/stop.php?action=list&routeId=${fav.routeId}`);
+              const json = await res.json();
+              if (json.stops) {
+                fetchedStops = json.stops.map(item => ({ stopId: item.stopId, stopName: getSafeStopName(item) }));
+              }
+            }
+
+            if (fetchedStops.length > 0) {
+              const stopIndex = fetchedStops.findIndex(s => s.stopId === fav.stopId);
+              if (stopIndex !== -1) {
+                fav.viaStops = fetchedStops.slice(stopIndex + 1, stopIndex + 4).map(s => s.stopName);
+                updated = true;
+              }
+            }
+          } catch (e) {
+            console.error("背景補全途經站失敗: ", e);
+          }
+        }
+      }
+      if (updated) {
+        saveFavorites();
+        renderMainBoard();
+        fetchAndUpdateAllETA();
+      }
+    }
+
     function saveFavorites() {
       localStorage.setItem('desktop_bus_favorites', JSON.stringify(favorites));
     }
 
-    // 渲染設定畫面中的最愛清單
     function renderSettingsFavorites() {
       if (favorites.length === 0) {
         favoriteList.innerHTML = `<p class="text-zinc-600 text-xs text-center py-4">暫無儲存路線</p>`;
@@ -574,12 +1013,16 @@
 
       favoriteList.innerHTML = "";
       favorites.forEach((fav, index) => {
+        let coColor = "bg-red-600";
+        if (fav.co === 'CTB') coColor = "bg-yellow-500 text-black";
+        if (fav.co === 'NLB') coColor = "bg-green-600";
+
         const item = document.createElement('div');
         item.className = "flex justify-between items-center bg-zinc-800 border border-zinc-700/60 p-3 rounded-lg";
         item.innerHTML = `
           <div class="flex-1 min-w-0 pr-2">
             <div class="flex items-center gap-2">
-              <span class="bg-orange-600 text-white text-xs font-black px-1.5 py-0.5 rounded font-mono">${fav.route}</span>
+              <span class="text-white text-xs font-black px-1.5 py-0.5 rounded font-mono ${coColor}">${fav.co} ${fav.route}</span>
               <span class="text-xs text-zinc-400 truncate">往 ${fav.boundName}</span>
             </div>
             <div class="text-sm font-semibold text-zinc-100 truncate mt-1">
@@ -594,7 +1037,6 @@
       });
     }
 
-    // 刪除最愛
     window.deleteFavorite = function(index) {
       favorites.splice(index, 1);
       saveFavorites();
@@ -602,7 +1044,7 @@
       showToast("已刪除該路線。");
     };
 
-    // ==================== 主報站畫面渲染（自適應字體） ====================
+    // ==================== 渲染主畫面 ====================
     function renderMainBoard() {
       if (favorites.length === 0) {
         domNoDataTip.classList.remove('hidden');
@@ -615,59 +1057,77 @@
       domMainDisplay.innerHTML = "";
 
       const count = favorites.length;
-      let cardHeightClass = "flex-1";
-      let routeTextSize = "text-5xl md:text-7xl";
-      let titleTextSize = "text-lg md:text-2xl";
-      let stopTextSize = "text-xs md:text-sm";
-      let etaTextSize = "text-4xl md:text-6xl";
-      let etaSubTextSize = "text-sm md:text-lg";
-
-      if (count === 1) {
-        routeTextSize = "text-7xl md:text-9xl";
-        titleTextSize = "text-2xl md:text-4xl";
-        stopTextSize = "text-sm md:text-lg";
-        etaTextSize = "text-6xl md:text-8xl";
-        etaSubTextSize = "text-lg md:text-2xl";
-      } else if (count === 2) {
-        routeTextSize = "text-6xl md:text-8xl";
-        titleTextSize = "text-xl md:text-3xl";
-        stopTextSize = "text-xs md:text-base";
-        etaTextSize = "text-5xl md:text-7xl";
-        etaSubTextSize = "text-base md:text-xl";
-      } else if (count >= 4) {
-        routeTextSize = "text-4xl md:text-5xl";
-        titleTextSize = "text-base md:text-xl";
-        stopTextSize = "text-[10px] md:text-xs";
-        etaTextSize = "text-3xl md:text-5xl";
-        etaSubTextSize = "text-xs md:text-sm";
-      }
 
       favorites.forEach((fav, index) => {
-        const cardId = `bus-card-${index}`;
-        const card = document.createElement('div');
-        card.id = cardId;
-        card.className = `bus-card ${cardHeightClass} bg-zinc-950/80 border-l-4 border-orange-500 rounded-r-lg p-3 flex justify-between items-center transition-all duration-300 relative overflow-hidden`;
+        let cardHeightClass = "flex-1";
         
+        let routeTextSize = "text-5xl md:text-7xl";
+        let titleTextSize = "text-lg md:text-2xl";
+        let stopTextSize = "text-xs md:text-sm";
+        let etaTextSize = "text-4xl md:text-6xl";
+        let etaSubTextSize = "text-sm md:text-lg";
+
+        if (count === 1) {
+          routeTextSize = "text-7xl md:text-9xl";
+          titleTextSize = "text-2xl md:text-4xl";
+          stopTextSize = "text-sm md:text-lg";
+          etaTextSize = "text-6xl md:text-8xl";
+          etaSubTextSize = "text-lg md:text-2xl";
+        } else if (count === 2) {
+          routeTextSize = "text-6xl md:text-8xl";
+          titleTextSize = "text-xl md:text-3xl";
+          stopTextSize = "text-xs md:text-base";
+          etaTextSize = "text-5xl md:text-7xl";
+          etaSubTextSize = "text-base md:text-xl";
+        } else if (count >= 4) {
+          routeTextSize = "text-4xl md:text-5xl";
+          titleTextSize = "text-base md:text-xl";
+          stopTextSize = "text-[10px] md:text-xs";
+          etaTextSize = "text-3xl md:text-5xl";
+          etaSubTextSize = "text-xs md:text-sm";
+        }
+
+        let leftBorder = "border-red-500";
+        if (fav.co === 'CTB') leftBorder = "border-yellow-500";
+        if (fav.co === 'NLB') leftBorder = "border-green-500";
+
+        const card = document.createElement('div');
+        card.id = `bus-card-${index}`;
+        card.className = `bus-card ${cardHeightClass} bg-zinc-950/80 border-l-4 ${leftBorder} rounded-r-lg p-4 flex justify-between items-center transition-all duration-300 relative overflow-hidden`;
+        
+        let viaStopsHtml = "";
+        if (fav.viaStops && fav.viaStops.length > 0) {
+          viaStopsHtml = `
+            <div class="text-[10px] md:text-xs text-zinc-400 truncate mt-1 flex items-center gap-1 opacity-90">
+              <span class="bg-zinc-800 text-zinc-300 px-1 rounded text-[9px] font-bold shrink-0">途經</span>
+              <span class="truncate text-orange-400/90 font-medium">${fav.viaStops.join(' → ')}</span>
+            </div>
+          `;
+        }
+
         card.innerHTML = `
-          <!-- 左側：巴士路線及目的地 -->
+          <!-- 左半邊：巴士編號、終點、當前車站及途經站 -->
           <div class="flex items-center gap-4 min-w-0 flex-1">
             <div class="${routeTextSize} font-black led-text led-orange select-none tracking-tighter shrink-0 min-w-[2.2ch] text-center">
               ${fav.route}
             </div>
             <div class="min-w-0 flex-1">
-              <div class="flex items-center gap-1 text-zinc-400">
-                <span class="text-xs px-1 bg-zinc-800 rounded font-semibold shrink-0">往</span>
+              <div class="flex items-center gap-1.5 text-zinc-400">
+                <span class="text-[10px] px-1 bg-zinc-800 rounded font-bold shrink-0">${fav.co}</span>
+                <span class="text-xs shrink-0">往</span>
                 <span class="${titleTextSize} font-bold text-zinc-100 truncate leading-tight">${fav.boundName}</span>
               </div>
-              <div class="${stopTextSize} text-zinc-500 truncate mt-1 flex items-center gap-1">
-                <i class="fa-solid fa-location-dot text-[10px]"></i>
+              <div class="${stopTextSize} text-zinc-300 font-bold truncate mt-1 flex items-center gap-1">
+                <i class="fa-solid fa-location-dot text-orange-500 text-xs"></i>
                 <span>${fav.stopName}</span>
               </div>
+              <!-- 途經車站區 -->
+              ${viaStopsHtml}
             </div>
           </div>
 
-          <!-- 右側：即時 ETA 倒數 -->
-          <div class="text-right shrink-0 pl-3 border-l border-zinc-900 flex flex-col justify-center min-w-[120px] md:min-w-[180px]">
+          <!-- 右半邊：大號實時分鐘，下兩班小字 -->
+          <div class="text-right shrink-0 pl-3 border-l border-zinc-900 flex flex-col justify-center min-w-[120px] md:min-w-[180px] lg:min-w-[220px]">
             <div class="leading-none">
               <span id="eta-val-${index}" class="${etaTextSize} font-black led-text led-orange">--</span>
               <span id="eta-unit-${index}" class="${etaSubTextSize} font-bold led-text led-orange ml-0.5">分鐘</span>
@@ -677,12 +1137,11 @@
             </div>
           </div>
         `;
-
         domMainDisplay.appendChild(card);
       });
     }
 
-    // ==================== 獲取所有最愛路線的實時 ETA 數據 ====================
+    // ==================== 獲取所有最愛路線的實時 ETA ====================
     async function fetchAndUpdateAllETA() {
       if (favorites.length === 0) return;
 
@@ -691,28 +1150,94 @@
 
       favorites.forEach(async (fav, index) => {
         try {
-          const url = `${API_BASE}/eta/${fav.stopId}/${fav.route}/${fav.serviceType}`;
-          const response = await fetch(url);
-          const result = await response.json();
+          let etaList = [];
 
-          if (result.data && result.data.length > 0) {
-            const direction = fav.bound;
-            const etaList = result.data
-              .filter(item => item.dir === direction)
-              .sort((a, b) => a.eta_seq - b.eta_seq);
-
-            updateCardETA(index, etaList);
-          } else {
-            setCardOffline(index, "暫無班次");
+          if (fav.co === 'KMB') {
+            try {
+              const url = `${API_KMB_BASE}/eta/${fav.stopId}/${fav.route}/${fav.serviceType}`;
+              const r = await fetch(url);
+              const text = await r.text();
+              if (text && text.trim()) {
+                const d = JSON.parse(text);
+                if (d.data) {
+                  etaList = d.data
+                    .filter(item => item.dir === fav.bound)
+                    .map(item => ({
+                      eta: item.eta,
+                      rmk: item.rmk_tc
+                    }));
+                }
+              }
+            } catch(err) {
+              console.warn(`KMB ETA fetch failed for ${fav.route}:`, err);
+            }
+          } 
+          else if (fav.co === 'CTB') {
+            try {
+              const url = `${API_CTB_BASE}/eta/ctb/${fav.stopId}/${fav.route}`;
+              const r = await fetch(url);
+              const text = await r.text();
+              if (text && text.trim()) {
+                const d = JSON.parse(text);
+                if (d.data) {
+                  etaList = d.data
+                    .filter(item => item.dir === fav.bound)
+                    .map(item => ({
+                      eta: item.eta,
+                      rmk: item.rmk_tc
+                    }));
+                }
+              }
+            } catch(err) {
+              console.warn(`CTB ETA fetch failed for ${fav.route}:`, err);
+            }
           }
+          else if (fav.co === 'NLB') {
+            // 自動自癒修補 routeId
+            let nlbRouteId = fav.routeId;
+            if (!nlbRouteId && allRoutes.length > 0) {
+              const foundRoute = allRoutes.find(r => r.co === 'NLB' && r.route === fav.route);
+              if (foundRoute) {
+                nlbRouteId = foundRoute.routeId;
+                fav.routeId = nlbRouteId; 
+                saveFavorites(); 
+              }
+            }
+
+            if (nlbRouteId) {
+              try {
+                const url = `${API_NLB_BASE}/stop.php?action=estimated-arrival-time&routeId=${nlbRouteId}&stopId=${fav.stopId}`;
+                const r = await fetch(url);
+                const text = await r.text();
+                // 核心安全修正：確保回應不為空，防止 JSON.parse 崩潰
+                if (text && text.trim()) {
+                  const d = JSON.parse(text);
+                  if (d.estimatedArrivalTimes) {
+                    etaList = d.estimatedArrivalTimes.map(item => ({
+                      eta: item.estimatedArrivalTime,
+                      rmk: item.wheelChair === 1 ? "輪椅" : ""
+                    }));
+                  }
+                }
+              } catch(err) {
+                console.warn(`NLB ETA fetch failed for ${fav.route}:`, err);
+              }
+            } else {
+              setCardOffline(index, "連線中...");
+              return;
+            }
+          }
+
+          updateCardETA(index, etaList);
+
         } catch (error) {
-          console.error(`獲取 ${fav.route} ETA 失敗:`, error);
+          console.error("更新 ETA 發生未知錯誤: ", error);
           setCardOffline(index, "連線錯誤");
         }
       });
     }
 
-    // ==================== 更新單張巴士牌的實時時間 ====================
+    // ==================== 更新單張卡片 ====================
     function updateCardETA(index, etaList) {
       const valDom = document.getElementById(`eta-val-${index}`);
       const unitDom = document.getElementById(`eta-unit-${index}`);
@@ -730,16 +1255,27 @@
       etaList.forEach(item => {
         if (!item.eta) return;
         
-        const etaTime = new Date(item.eta);
+        const etaTime = new Date(item.eta.replace(' ', 'T')); 
         const diffMs = etaTime - now;
         const diffMins = Math.max(0, Math.floor(diffMs / 1000 / 60));
         
+        // 正規表達式高相容安全截取，解決各種日期和非標準字串解析
+        let timePart = "00:00";
+        const timeMatch = item.eta.match(/(\d{2}:\d{2})/);
+        if (timeMatch) {
+          timePart = timeMatch[1];
+        } else {
+          timePart = item.eta.includes('T') ? item.eta.split('T')[1].substring(0, 5) : item.eta.split(' ')[1].substring(0, 5);
+        }
+
         validEtas.push({
           mins: diffMins,
-          rmk: item.rmk_tc || "",
-          timeStr: item.eta.split('T')[1].substring(0, 5)
+          rmk: item.rmk || "",
+          timeStr: timePart
         });
       });
+
+      validEtas.sort((a, b) => a.mins - b.mins);
 
       if (validEtas.length === 0) {
         setCardOffline(index, "未有資料");
@@ -748,22 +1284,37 @@
 
       const firstBus = validEtas[0];
       
-      // 當預計時間在 1 分鐘或以下，進入「即將到站」模式
       if (firstBus.mins <= 1) {
         valDom.textContent = `即將到站 (${firstBus.mins}分)`;
         valDom.className = "text-xl md:text-3xl lg:text-4xl font-black led-text led-green animate-pulse";
         unitDom.style.display = "none";
-        
-        cardDom.classList.remove('border-orange-500');
+        cardDom.classList.remove('border-red-500', 'border-yellow-500', 'border-green-500');
         cardDom.classList.add('border-emerald-500');
       } else {
         valDom.textContent = firstBus.mins;
-        valDom.className = "text-4xl md:text-7xl font-black led-text led-orange";
-        unitDom.style.display = "inline";
-        unitDom.className = "text-sm md:text-lg font-bold led-text led-orange ml-0.5";
         
-        cardDom.classList.remove('border-emerald-500');
-        cardDom.classList.add('border-orange-500');
+        const count = favorites.length;
+        let targetSize = "text-4xl md:text-7xl";
+        if (count === 1) {
+          targetSize = "text-6xl md:text-8xl";
+        } else if (count === 2) {
+          targetSize = "text-5xl md:text-7xl";
+        } else if (count >= 4) {
+          targetSize = "text-3xl md:text-5xl";
+        }
+        
+        valDom.className = `${targetSize} font-black led-text led-orange`;
+        unitDom.style.display = "inline";
+        
+        let unitSize = "text-sm md:text-lg";
+        unitDom.className = `${unitSize} font-bold led-text led-orange ml-0.5`;
+        
+        const fav = favorites[index];
+        cardDom.classList.remove('border-emerald-500', 'border-red-500', 'border-yellow-500', 'border-green-500');
+        let borderClass = "border-red-500";
+        if (fav.co === 'CTB') borderClass = "border-yellow-500";
+        if (fav.co === 'NLB') borderClass = "border-green-500";
+        cardDom.classList.add(borderClass);
       }
 
       let nextHtml = "";
@@ -797,7 +1348,8 @@
         if (unitDom) unitDom.style.display = "none";
         if (nextDom) nextDom.innerHTML = `<span class="text-zinc-700">無法獲取數據</span>`;
         if (cardDom) {
-          cardDom.classList.remove('border-orange-500', 'border-emerald-500');
+          cardDom.classList.remove('border-red-500', 'border-yellow-500', 'border-green-500', 'border-emerald-500');
+          cardDom.className = cardDom.className.replace(/border-(red|yellow|green|emerald)-500/g, '');
           cardDom.classList.add('border-zinc-800');
         }
       }
