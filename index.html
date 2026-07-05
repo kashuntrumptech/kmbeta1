@@ -202,7 +202,7 @@
     let currentStops = []; 
     let isZoomedTop = false; // 是否開啟最上方與最下方欄位放大模式
 
-    // 獨立巴士公司加載與重試狀態追蹤
+    // 獨立巴士 company 加載與重試狀態追蹤
     let states = {
       KMB: { loaded: false, retries: 0 },
       CTB: { loaded: false, retries: 0 },
@@ -306,11 +306,12 @@
       let orig = r.orig_tc || r.orig || r.startPoint_tc;
       if (orig && orig !== '起點' && orig !== 'undefined') return orig;
       
-      // 核心升級：極強大正則破折號分割器，完美支援各種中英文橫線
-      let name = r.routeName_tc || r.routeName_sc || r.routeName_en || '';
+      // 核心安全修復：安全轉義減號，相容全/半形及多種特殊分隔符
+      let name = r.routeName_tc || r.routeName_sc || r.routeName_en || r.routeName || '';
       if (name && typeof name === 'string') {
-        const parts = name.split(/\s*[-－–—]\s*/);
+        const parts = name.split(/\s*[\-－–—~～>＞→往/]\s*/);
         if (parts.length >= 1 && parts[0]) return parts[0].trim();
+        return name.trim(); // 終極安全 fallback
       }
       return '起點';
     }
@@ -320,11 +321,12 @@
       let dest = r.dest_tc || r.dest || r.destination_tc;
       if (dest && dest !== '目的地' && dest !== 'undefined') return dest;
       
-      // 核心升級：極強大正則破折號分割器，完美支援各種中英文橫線
-      let name = r.routeName_tc || r.routeName_sc || r.routeName_en || '';
+      // 核心安全修復：安全轉義減號，相容全/半形及多種特殊分隔符
+      let name = r.routeName_tc || r.routeName_sc || r.routeName_en || r.routeName || '';
       if (name && typeof name === 'string') {
-        const parts = name.split(/\s*[-－–—]\s*/);
-        if (parts.length >= 2 && parts[1]) return parts[1].trim();
+        const parts = name.split(/\s*[\-－–—~～>＞→往/]\s*/);
+        if (parts.length >= 2 && parts[parts.length - 1]) return parts[parts.length - 1].trim();
+        return name.trim(); // 終極安全 fallback：防止分割失敗返回 "目的地" 或 "undefined"
       }
       return '目的地';
     }
@@ -440,6 +442,9 @@
         if (!res.ok) throw new Error("NLB HTTP error");
         const json = await res.json();
         if (json.routes && json.routes.length > 0) {
+          // 輸出除錯資訊以確認 NLB 資料結構
+          console.log("[除錯] 嶼巴第一條路線原始數據:", json.routes[0]);
+          
           const mapped = json.routes.map(r => ({
             co: 'NLB',
             route: r.routeNo,
@@ -453,7 +458,7 @@
           allRoutes = allRoutes.filter(r => r.co !== 'NLB').concat(mapped);
           states.NLB.loaded = true;
           updateCompanyStatus('NLB', 'success');
-          console.log(`[連線] 嶼巴路線預載成功，共 ${mapped.length} 條。`);
+          console.log(`[連線] 嶼巴路線預載成功，共 ${mapped.length} 條。第一條解析後:`, mapped[0]);
           
           // 當嶼巴加載完成後，立刻自愈修復舊路線（關鍵自癒！）
           silentlyUpdateMissingViaStops();
