@@ -306,10 +306,11 @@
       let orig = r.orig_tc || r.orig || r.startPoint_tc;
       if (orig && orig !== '起點' && orig !== 'undefined') return orig;
       
-      // 對於嶼巴，我們需要從 routeName_tc 中智能分割提取起點
+      // 核心升級：極強大正則破折號分割器，完美支援各種中英文橫線
       let name = r.routeName_tc || r.routeName_sc || r.routeName_en || '';
-      if (name && typeof name === 'string' && name.includes(' - ')) {
-        return name.split(' - ')[0].trim();
+      if (name && typeof name === 'string') {
+        const parts = name.split(/\s*[-－–—]\s*/);
+        if (parts.length >= 1 && parts[0]) return parts[0].trim();
       }
       return '起點';
     }
@@ -319,10 +320,11 @@
       let dest = r.dest_tc || r.dest || r.destination_tc;
       if (dest && dest !== '目的地' && dest !== 'undefined') return dest;
       
-      // 對於嶼巴，我們需要從 routeName_tc 中智能分割提取目的地
+      // 核心升級：極強大正則破折號分割器，完美支援各種中英文橫線
       let name = r.routeName_tc || r.routeName_sc || r.routeName_en || '';
-      if (name && typeof name === 'string' && name.includes(' - ')) {
-        return name.split(' - ')[1].trim();
+      if (name && typeof name === 'string') {
+        const parts = name.split(/\s*[-－–—]\s*/);
+        if (parts.length >= 2 && parts[1]) return parts[1].trim();
       }
       return '目的地';
     }
@@ -453,7 +455,7 @@
           updateCompanyStatus('NLB', 'success');
           console.log(`[連線] 嶼巴路線預載成功，共 ${mapped.length} 條。`);
           
-          // 當嶼巴加載完成後，立刻自動對缺少 routeId 與目的地顯示為 "目的地" 或 "undefined" 的最愛路線進行背景自動修復自癒！
+          // 當嶼巴加載完成後，立刻自愈修復舊路線（關鍵自愈！）
           silentlyUpdateMissingViaStops();
           fetchAndUpdateAllETA();
           return;
@@ -928,28 +930,38 @@
       showToast("已成功加入！");
     }
 
-    // 智能升級舊數據：自動在背景補全缺失的 routeId 或目的地名稱，並更新至 localStorage 存檔
+    // 智能極強自癒系統：自動比對上車站，在背景自動匹配修正最愛中的 NLB 方向、正確的 routeId 與目的地！
     async function silentlyUpdateMissingViaStops() {
       let updated = false;
       for (let i = 0; i < favorites.length; i++) {
         const fav = favorites[i];
 
-        // 1. [自動自癒] 如果是嶼巴且缺少 routeId，嘗試從已載入的 allRoutes 中動態復原
-        if (fav.co === 'NLB' && !fav.routeId) {
-          const foundRoute = allRoutes.find(r => r.co === 'NLB' && r.route === fav.route);
-          if (foundRoute) {
-            fav.routeId = foundRoute.routeId;
-            updated = true;
-            console.log(`[自動修復] 成功修復並補全舊嶼巴路線 ${fav.route} 的 routeId (${fav.routeId})。`);
+        // 1. [動態超強自癒] 如果是嶼巴，透過查詢各方向站點，動態匹配正確的 routeId 與目的地！
+        if (fav.co === 'NLB' && (!fav.routeId || fav.boundName === '目的地' || fav.boundName === 'undefined' || fav.boundName === '')) {
+          const matchingNLBRoutes = allRoutes.filter(r => r.co === 'NLB' && r.route === fav.route);
+          
+          // 挨個查詢各個方向的車站，看該上車站到底是去程(39)還是回程(40)
+          for (const r of matchingNLBRoutes) {
+            try {
+              const res = await fetch(`${API_NLB_BASE}/stop.php?action=list&routeId=${r.routeId}`);
+              const json = await res.json();
+              if (json.stops && json.stops.some(s => s.stopId === fav.stopId)) {
+                fav.routeId = r.routeId;
+                fav.boundName = r.dest; // 自動獲取如「深圳灣口岸」或「天水圍站」
+                updated = true;
+                console.log(`[自動自癒修復] 成功將 ${fav.route} 修正為往 ${fav.boundName} (routeId: ${fav.routeId})`);
+                break;
+              }
+            } catch(e) { 
+              console.error("嶼巴背景匹配失敗:", e); 
+            }
           }
         }
 
-        // 2. [核心修正] 補全可能顯示為 "目的地" 或 "undefined" 的正確行車目的地
+        // 2. [自動自癒] 補全可能顯示為 "目的地" 或 "undefined" 的正確行車目的地（城巴、九巴通用）
         if ((!fav.boundName || fav.boundName === '目的地' || fav.boundName === 'undefined') && allRoutes.length > 0) {
           const foundRoute = allRoutes.find(r => r.co === fav.co && r.route === fav.route && r.bound === fav.bound);
           if (foundRoute) {
-            // 修正重點：foundRoute 內已經包含了預載並智能切割好的 dest 欄位 (如 "深圳灣口岸")
-            // 直接將其賦值給 fav.boundName，徹底解決再次使用 getSafeRouteDest(foundRoute) 無欄位可解退回 '目的地' 的邏輯 Bug
             fav.boundName = foundRoute.dest;
             updated = true;
             console.log(`[自動修復] 成功將最愛路線 ${fav.route} 的目的地名稱修復為 ${fav.boundName}。`);
@@ -1203,7 +1215,7 @@
             }
           }
           else if (fav.co === 'NLB') {
-            // 自動自癒修補 routeId
+            // [自動自癒] 檢查並動態補齊記憶體與 localStorage
             let nlbRouteId = fav.routeId;
             if (!nlbRouteId && allRoutes.length > 0) {
               const foundRoute = allRoutes.find(r => r.co === 'NLB' && r.route === fav.route);
