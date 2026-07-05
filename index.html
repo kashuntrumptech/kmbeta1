@@ -265,9 +265,6 @@
       loadCTB();
       loadNLB();
 
-      // 6. 背景自動為舊最愛路線補齊「途經車站」與修補自癒
-      silentlyUpdateMissingViaStops();
-
       initEventListeners();
     });
 
@@ -301,19 +298,35 @@
              '未知車站';
     }
 
+    // 🌟 100% 避開正則表達式相容性地雷，相容 iPad/行動裝置內核
+    function splitRouteName(name) {
+      if (!name || typeof name !== 'string') return { orig: '起點', dest: '目的地' };
+      
+      // 依序偵測各種常見的分隔符號
+      const splitters = [' - ', '－', '-', '–', '—', ' > ', '＞', '→', ' 往 ', '往', ' / ', '/'];
+      for (const splitter of splitters) {
+        if (name.includes(splitter)) {
+          const parts = name.split(splitter);
+          if (parts.length >= 2) {
+            const orig = parts[0].trim();
+            const dest = parts[parts.length - 1].trim();
+            if (orig && dest) {
+              return { orig, dest };
+            }
+          }
+        }
+      }
+      return { orig: name.trim(), dest: name.trim() };
+    }
+
     function getSafeRouteOrig(r) {
       if (!r) return '起點';
       let orig = r.orig_tc || r.orig || r.startPoint_tc;
       if (orig && orig !== '起點' && orig !== 'undefined') return orig;
       
-      // 核心安全修復：安全轉義減號，相容全/半形及多種特殊分隔符
       let name = r.routeName_tc || r.routeName_sc || r.routeName_en || r.routeName || '';
-      if (name && typeof name === 'string') {
-        const parts = name.split(/\s*[\-－–—~～>＞→往/]\s*/);
-        if (parts.length >= 1 && parts[0]) return parts[0].trim();
-        return name.trim(); // 終極安全 fallback
-      }
-      return '起點';
+      const split = splitRouteName(name);
+      return split.orig;
     }
 
     function getSafeRouteDest(r) {
@@ -321,14 +334,9 @@
       let dest = r.dest_tc || r.dest || r.destination_tc;
       if (dest && dest !== '目的地' && dest !== 'undefined') return dest;
       
-      // 核心安全修復：安全轉義減號，相容全/半形及多種特殊分隔符
       let name = r.routeName_tc || r.routeName_sc || r.routeName_en || r.routeName || '';
-      if (name && typeof name === 'string') {
-        const parts = name.split(/\s*[\-－–—~～>＞→往/]\s*/);
-        if (parts.length >= 2 && parts[parts.length - 1]) return parts[parts.length - 1].trim();
-        return name.trim(); // 終極安全 fallback：防止分割失敗返回 "目的地" 或 "undefined"
-      }
-      return '目的地';
+      const split = splitRouteName(name);
+      return split.dest;
     }
 
     // ==================== 獨立狀態 UI 更新 ====================
@@ -387,6 +395,9 @@
           states.KMB.loaded = true;
           updateCompanyStatus('KMB', 'success');
           console.log(`[連線] 九巴路線預載成功，共 ${mapped.length} 條。`);
+          
+          // 數據庫更新，觸發一次自癒
+          silentlyUpdateMissingViaStops();
           return;
         }
         throw new Error("KMB data empty");
@@ -395,7 +406,7 @@
       }
       states.KMB.retries++;
       updateCompanyStatus('KMB', 'failed');
-      setTimeout(loadKMB, 10000); // 10秒後無限重試
+      setTimeout(loadKMB, 10000); 
     }
 
     async function loadCTB() {
@@ -421,6 +432,9 @@
           states.CTB.loaded = true;
           updateCompanyStatus('CTB', 'success');
           console.log(`[連線] 城巴路線預載成功，共 ${mapped.length} 條。`);
+          
+          // 數據庫更新，觸發一次自癒
+          silentlyUpdateMissingViaStops();
           return;
         }
         throw new Error("CTB data empty");
@@ -429,7 +443,7 @@
       }
       states.CTB.retries++;
       updateCompanyStatus('CTB', 'failed');
-      setTimeout(loadCTB, 10000); // 10秒後無限重試
+      setTimeout(loadCTB, 10000); 
     }
 
     async function loadNLB() {
@@ -442,23 +456,27 @@
         if (!res.ok) throw new Error("NLB HTTP error");
         const json = await res.json();
         if (json.routes && json.routes.length > 0) {
-          // 輸出除錯資訊以確認 NLB 資料結構
-          console.log("[除錯] 嶼巴第一條路線原始數據:", json.routes[0]);
-          
-          const mapped = json.routes.map(r => ({
-            co: 'NLB',
-            route: r.routeNo,
-            routeId: r.routeId,
-            orig: getSafeRouteOrig(r),
-            dest: getSafeRouteDest(r), 
-            bound: r.routeId, // 🌟 關鍵修正：嶼巴去回程完全獨立，直接以 routeId 作為 bound 避免被合併！
-            serviceType: '1'
-          }));
+          const mapped = json.routes.map(r => {
+            const mappedRoute = {
+              co: 'NLB',
+              route: r.routeNo,
+              routeId: r.routeId,
+              orig: getSafeRouteOrig(r),
+              dest: getSafeRouteDest(r), 
+              bound: r.routeId, // 🌟 嶼巴去回程完全獨立，直接以 routeId 作為 bound 避免被合併！
+              serviceType: '1'
+            };
+            // 除錯輸出以確認 B2P 資料解析
+            if (r.routeNo === 'B2P') {
+              console.log("[除錯 B2P 原始]:", r, "[解析後結果]:", mappedRoute);
+            }
+            return mappedRoute;
+          });
           
           allRoutes = allRoutes.filter(r => r.co !== 'NLB').concat(mapped);
           states.NLB.loaded = true;
           updateCompanyStatus('NLB', 'success');
-          console.log(`[連線] 嶼巴路線預載成功，共 ${mapped.length} 條。第一條解析後:`, mapped[0]);
+          console.log(`[連線] 嶼巴路線預載成功，共 ${mapped.length} 條。`);
           
           // 當嶼巴加載完成後，立刻自愈修復舊路線（關鍵自癒！）
           silentlyUpdateMissingViaStops();
@@ -471,7 +489,7 @@
       }
       states.NLB.retries++;
       updateCompanyStatus('NLB', 'failed');
-      setTimeout(loadNLB, 10000); // 10秒後無限重試
+      setTimeout(loadNLB, 10000); 
     }
 
     function initEventListeners() {
@@ -938,6 +956,8 @@
 
     // 智能極強自癒系統：自動比對上車站，在背景自動匹配修正最愛中的 NLB 方向、正確的 routeId 與目的地！
     async function silentlyUpdateMissingViaStops() {
+      if (allRoutes.length === 0) return; // 確保全港路線已下載，防止異步競爭
+      
       let updated = false;
       for (let i = 0; i < favorites.length; i++) {
         const fav = favorites[i];
@@ -1018,7 +1038,7 @@
             }
 
             if (fetchedStops.length > 0) {
-              const stopIndex = fetchedStops.findIndex(s => s.stopId === fav.stopId);
+              const stopIndex = fetchedStops.slice().findIndex(s => s.stopId === fav.stopId);
               if (stopIndex !== -1) {
                 fav.viaStops = fetchedStops.slice(stopIndex + 1, stopIndex + 4).map(s => s.stopName);
                 updated = true;
@@ -1141,7 +1161,7 @@
         }
 
         card.innerHTML = `
-          <!-- 左半邊：巴士編號、終點、當前車站及途經站 -->
+          <!-- Left: Bus No, Dest, Current Stop and Via Stops -->
           <div class="flex items-center gap-4 min-w-0 flex-1">
             <div class="${routeTextSize} font-black led-text led-orange select-none tracking-tighter shrink-0 min-w-[2.2ch] text-center">
               ${fav.route}
@@ -1156,12 +1176,12 @@
                 <i class="fa-solid fa-location-dot text-orange-500 text-xs"></i>
                 <span>${fav.stopName}</span>
               </div>
-              <!-- 途經車站區 -->
+              <!-- Via Stops Area -->
               ${viaStopsHtml}
             </div>
           </div>
 
-          <!-- 右半邊：大號實時分鐘，下兩班小字 -->
+          <!-- Right: Big Live Mins, next arrivals -->
           <div class="text-right shrink-0 pl-3 border-l border-zinc-900 flex flex-col justify-center min-w-[120px] md:min-w-[180px] lg:min-w-[220px]">
             <div class="leading-none">
               <span id="eta-val-${index}" class="${etaTextSize} font-black led-text led-orange">--</span>
@@ -1228,7 +1248,6 @@
             }
           }
           else if (fav.co === 'NLB') {
-            // [自動自癒] 檢查並動態補齊記憶體與 localStorage
             let nlbRouteId = fav.routeId;
             if (!nlbRouteId && allRoutes.length > 0) {
               const foundRoute = allRoutes.find(r => r.co === 'NLB' && r.route === fav.route);
@@ -1241,18 +1260,19 @@
 
             if (nlbRouteId) {
               try {
-                const url = `${API_NLB_BASE}/stop.php?action=estimated-arrival-time&routeId=${nlbRouteId}&stopId=${fav.stopId}`;
+                // 🌟 [關鍵修復]：將嶼巴 ETA API 的 action 修正為正確的 "estimatedArrivals" (先前誤寫為 estimated-arrival-time)
+                const url = `${API_NLB_BASE}/stop.php?action=estimatedArrivals&routeId=${nlbRouteId}&stopId=${fav.stopId}&language=zh`;
                 const r = await fetch(url);
                 const text = await r.text();
-                // 核心安全修正：確保回應不為空，防止 JSON.parse 崩潰
                 if (text && text.trim()) {
                   const d = JSON.parse(text);
-                  if (d.estimatedArrivalTimes) {
-                    etaList = d.estimatedArrivalTimes.map(item => ({
-                      eta: item.estimatedArrivalTime,
-                      rmk: item.wheelChair === 1 ? "輪椅" : ""
-                    }));
-                  }
+                  
+                  // 🌟 [關鍵修復]：相容讀取正確的 estimatedArrivals 以及 estimatedArrivalTimes (向前防呆)
+                  const arrivals = d.estimatedArrivals || d.estimatedArrivalTimes || [];
+                  etaList = arrivals.map(item => ({
+                    eta: item.estimatedArrivalTime || item.eta,
+                    rmk: item.wheelChair === 1 ? "輪椅" : ""
+                  }));
                 }
               } catch(err) {
                 console.warn(`NLB ETA fetch failed for ${fav.route}:`, err);
@@ -1294,7 +1314,6 @@
         const diffMs = etaTime - now;
         const diffMins = Math.max(0, Math.floor(diffMs / 1000 / 60));
         
-        // 正規表達式高相容安全截取，解決各種日期和非標準字串解析
         let timePart = "00:00";
         const timeMatch = item.eta.match(/(\d{2}:\d{2})/);
         if (timeMatch) {
@@ -1329,7 +1348,6 @@
         valDom.textContent = firstBus.mins;
         
         const count = favorites.length;
-        
         let targetSize = "text-4xl md:text-7xl";
         if (count === 1) {
           targetSize = "text-6xl md:text-8xl";
