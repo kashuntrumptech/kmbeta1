@@ -4,6 +4,21 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>座枱巴士實時報站系統</title>
+  
+  <!-- ==================== PWA 全螢幕/App 化設定 ==================== -->
+  <!-- 告訴 Android Chrome 這是一個 Web App -->
+  <meta name="mobile-web-app-capable" content="yes">
+  <!-- 告訴 iOS Safari 這是 App -->
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="巴士報站">
+  <!-- 設定狀態欄與主題顏色 -->
+  <meta name="theme-color" content="#0d0d0d">
+  
+  <!-- 連結至 App 設定檔 (關鍵所在！) -->
+  <link rel="manifest" href="manifest.json">
+  <!-- ============================================================= -->
+
   <!-- 引入 Tailwind CSS 方便排版與美化 -->
   <script src="https://cdn.tailwindcss.com"></script>
   <!-- 引入 Font Awesome 圖標 -->
@@ -735,9 +750,7 @@
       
       // 當預計時間在 1 分鐘或以下，進入「即將到站」模式
       if (firstBus.mins <= 1) {
-        // 修改重點：這裡同時在括號內顯示具體的分鐘數，方便用家精準預算步行時間
         valDom.textContent = `即將到站 (${firstBus.mins}分)`;
-        // 微調字體大小，避免長文字溢出
         valDom.className = "text-xl md:text-3xl lg:text-4xl font-black led-text led-green animate-pulse";
         unitDom.style.display = "none";
         
