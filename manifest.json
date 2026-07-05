@@ -1,0 +1,18 @@
+{
+  "name": "座枱巴士實時報站系統",
+  "short_name": "巴士報站",
+  "description": "提供九巴路線實時報站及 ETA 倒數，專為座枱式平板與副螢幕打造的實時面板。",
+  "start_url": "index.html",
+  "display": "standalone",
+  "background_color": "#0d0d0d",
+  "theme_color": "#0d0d0d",
+  "orientation": "any",
+  "icons": [
+    {
+      "src": "https://cdn-icons-png.flaticon.com/512/3419/3419356.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
