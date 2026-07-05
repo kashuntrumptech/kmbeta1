@@ -1,0 +1,794 @@
+<!DOCTYPE html>
+<html lang="zh-HK">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>座枱巴士實時報站系統</title>
+  <!-- 引入 Tailwind CSS 方便排版與美化 -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- 引入 Font Awesome 圖標 -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <style>
+    /* 仿巴士電子報站牌的復古字體與顏色 */
+    @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Noto+Sans+HK:wght@400;700;900&display=swap');
+    
+    body {
+      font-family: 'Noto Sans HK', sans-serif;
+      background-color: #0d0d0d;
+      color: #f3f4f6;
+      overflow: hidden; /* 隱藏滾動條，保持座枱式乾淨畫面 */
+      height: 100vh;
+      width: 100vw;
+    }
+
+    .led-text {
+      font-family: 'Share Tech Mono', 'Noto Sans HK', monospace;
+    }
+
+    /* 橘黃色 LED 發光效果 */
+    .led-orange {
+      color: #ff9f0a;
+      text-shadow: 0 0 8px rgba(255, 159, 10, 0.6);
+    }
+
+    /* 綠色 LED 發光效果（用於即將到達或首班車） */
+    .led-green {
+      color: #30d158;
+      text-shadow: 0 0 8px rgba(48, 209, 88, 0.6);
+    }
+
+    /* 自訂滾動條（用於設定視窗及建議選單） */
+    .custom-scrollbar::-webkit-scrollbar {
+      width: 6px;
+    }
+    .custom-scrollbar::-webkit-scrollbar-track {
+      background: #1a1a1a;
+    }
+    .custom-scrollbar::-webkit-scrollbar-thumb {
+      background: #444;
+      border-radius: 3px;
+    }
+    .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+      background: #666;
+    }
+  </style>
+</head>
+<body class="flex flex-col justify-between p-4 relative">
+
+  <!-- 頂部狀態欄 -->
+  <header class="flex justify-between items-center border-b border-zinc-800 pb-2 z-10 shrink-0">
+    <div class="flex items-center gap-2">
+      <div id="status-indicator" class="w-3 h-3 rounded-full bg-orange-500 animate-pulse" title="正在載入路線資訊..."></div>
+      <span id="status-text" class="text-xs text-zinc-400 font-mono tracking-widest uppercase">KMB LIVE (載入中)</span>
+    </div>
+    <div class="flex items-center gap-4">
+      <!-- 系統時鐘 -->
+      <span id="system-clock" class="text-sm font-bold text-zinc-300 font-mono">12:00:00</span>
+      <!-- 設定按鈕 -->
+      <button id="btn-toggle-settings" class="text-zinc-400 hover:text-white transition-colors p-1" title="設定路線">
+        <i class="fa-solid fa-gear text-lg"></i>
+      </button>
+    </div>
+  </header>
+
+  <!-- 主顯示區（我的最愛巴士牌） -->
+  <main id="main-display" class="flex-1 flex flex-col justify-center gap-3 my-4 overflow-hidden">
+    <!-- 這裡會由 JavaScript 根據儲存的「我的最愛」動態生成巴士牌卡片 -->
+    <div id="no-data-tip" class="text-center text-zinc-500 py-10 flex flex-col items-center justify-center gap-4 flex-1">
+      <i class="fa-solid fa-bus text-5xl text-zinc-700 animate-bounce"></i>
+      <p class="text-lg">未加入任何路線</p>
+      <p class="text-xs text-zinc-600">請點擊右上角 <i class="fa-solid fa-gear"></i> 開始設定你的桌面報站板</p>
+    </div>
+  </main>
+
+  <!-- 底部更新時間提示 -->
+  <footer class="flex justify-between items-center text-[10px] text-zinc-500 border-t border-zinc-900 pt-2 shrink-0">
+    <span id="last-update">最後更新: 未更新</span>
+    <span class="flex items-center gap-1">
+      <span class="inline-block w-2 h-2 rounded-full bg-orange-500"></span>
+      每 30 秒自動更新
+    </span>
+  </footer>
+
+  <!-- ==================== 設定彈出視窗 ==================== -->
+  <div id="settings-modal" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
+    <div class="bg-zinc-900 border border-zinc-800 w-full max-w-lg rounded-xl flex flex-col max-h-[85vh] shadow-2xl">
+      
+      <!-- 視窗頭部 -->
+      <div class="p-4 border-b border-zinc-800 flex justify-between items-center">
+        <h3 class="font-bold text-white flex items-center gap-2">
+          <i class="fa-solid fa-sliders text-orange-500"></i> 設定我的最愛路線
+        </h3>
+        <button id="btn-close-settings" class="text-zinc-400 hover:text-white text-xl">&times;</button>
+      </div>
+
+      <!-- 視窗內容 (可滾動) -->
+      <div class="p-4 overflow-y-auto flex-1 custom-scrollbar space-y-4">
+        
+        <!-- 第一步：搜尋巴士路線 -->
+        <div class="space-y-2">
+          <label class="text-xs font-semibold text-zinc-400 block">第一步：搜尋九巴路線</label>
+          <div class="flex gap-2 relative">
+            <!-- 搜尋輸入框容器 -->
+            <div class="relative flex-1">
+              <input type="text" id="input-route" autocomplete="off" placeholder="例如: 968, 1A, 268C" class="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-orange-500 uppercase font-mono">
+              <!-- 路線自動建議下拉選單 -->
+              <div id="suggestions-box" class="absolute left-0 right-0 mt-1 bg-zinc-800 border border-zinc-700 rounded-lg max-h-48 overflow-y-auto z-50 hidden custom-scrollbar shadow-xl">
+                <!-- 建議路線將由 JS 動態生成 -->
+              </div>
+            </div>
+            <button id="btn-search" class="bg-orange-600 hover:bg-orange-500 text-white px-4 py-2 rounded-lg font-bold transition-colors shrink-0">
+              搜尋
+            </button>
+          </div>
+        </div>
+
+        <!-- 第二步：選擇方向 (搜尋路線後顯示) -->
+        <div id="section-bound" class="space-y-2 hidden">
+          <label class="text-xs font-semibold text-zinc-400 block">第二步：選擇行車方向</label>
+          <div class="grid grid-cols-2 gap-2" id="bound-container">
+            <!-- 由 JS 動態生成方向按鈕 -->
+          </div>
+        </div>
+
+        <!-- 第三步：選擇車站 (選擇方向後顯示) -->
+        <div id="section-stop" class="space-y-2 hidden">
+          <label class="text-xs font-semibold text-zinc-400 block">第三步：選擇上車車站</label>
+          <div class="relative">
+            <select id="select-stop" class="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-orange-500 max-h-48">
+              <option value="">-- 請選擇車站 --</option>
+            </select>
+          </div>
+          <button id="btn-add-favorite" class="w-full bg-emerald-600 hover:bg-emerald-500 text-white py-2.5 rounded-lg font-bold transition-colors mt-2 flex items-center justify-center gap-2">
+            <i class="fa-solid fa-plus"></i> 加入「我的最愛」
+          </button>
+        </div>
+
+        <!-- 我的最愛清單 -->
+        <div class="pt-4 border-t border-zinc-800">
+          <label class="text-xs font-semibold text-zinc-400 block mb-2">已儲存的路線 (最多建議 4-5 條以保持桌面字體大小)</label>
+          <div id="favorite-list" class="space-y-2">
+            <!-- 已儲存路線列表 -->
+            <p class="text-zinc-600 text-xs text-center py-4">暫無儲存路線</p>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- 視窗底部 -->
+      <div class="p-4 border-t border-zinc-800 flex justify-end">
+        <button id="btn-save-confirm" class="bg-zinc-800 hover:bg-zinc-700 text-white px-6 py-2 rounded-lg font-semibold transition-colors">
+          完成設定
+        </button>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- 吐司通知提示 (代替不友善的 alert) -->
+  <div id="toast" class="fixed bottom-12 left-1/2 transform -translate-x-1/2 bg-zinc-800 border border-zinc-700 text-white text-xs px-4 py-2.5 rounded-full shadow-lg flex items-center gap-2 transition-all duration-300 translate-y-10 opacity-0 pointer-events-none z-50">
+    <span id="toast-msg">提示訊息</span>
+  </div>
+
+  <!-- ==================== JAVASCRIPT 邏輯區 ==================== -->
+  <script>
+    // --- 基礎設定 ---
+    const API_BASE = "https://data.etabus.gov.hk/v1/transport/kmb";
+    
+    // --- 狀態管理 ---
+    let favorites = []; // 格式: [{route, bound, boundName, stopId, stopName, serviceType}]
+    let allRoutes = []; // 預載所有九巴路線，解決直接搜尋 404 問題
+    let currentRouteData = null; // 暫存搜尋到的路線資訊
+    let currentStops = []; // 暫存該方向的所有車站
+
+    // --- DOM 元素獲取 ---
+    const domClock = document.getElementById('system-clock');
+    const domMainDisplay = document.getElementById('main-display');
+    const domNoDataTip = document.getElementById('no-data-tip');
+    const domLastUpdate = document.getElementById('last-update');
+    const domStatusIndicator = document.getElementById('status-indicator');
+    const domStatusText = document.getElementById('status-text');
+    
+    const modalSettings = document.getElementById('settings-modal');
+    const btnToggleSettings = document.getElementById('btn-toggle-settings');
+    const btnCloseSettings = document.getElementById('btn-close-settings');
+    const btnSaveConfirm = document.getElementById('btn-save-confirm');
+
+    const inputRoute = document.getElementById('input-route');
+    const suggestionsBox = document.getElementById('suggestions-box');
+    const btnSearch = document.getElementById('btn-search');
+    const sectionBound = document.getElementById('section-bound');
+    const boundContainer = document.getElementById('bound-container');
+    const sectionStop = document.getElementById('section-stop');
+    const selectStop = document.getElementById('select-stop');
+    const btnAddFav = document.getElementById('btn-add-favorite');
+    const favoriteList = document.getElementById('favorite-list');
+
+    const domToast = document.getElementById('toast');
+    const domToastMsg = document.getElementById('toast-msg');
+
+    // ==================== 初始化 ====================
+    window.addEventListener('load', async () => {
+      // 1. 載入本地儲存的「我的最愛」
+      const saved = localStorage.getItem('desktop_bus_favorites');
+      if (saved) {
+        try {
+          favorites = JSON.parse(saved);
+        } catch(e) {
+          favorites = [];
+        }
+      }
+
+      // 2. 啟動系統時鐘
+      startClock();
+
+      // 3. 渲染主畫面
+      renderMainBoard();
+
+      // 4. 背景載入所有九巴路線（供搜尋與即時建議）
+      await preloadAllRoutes();
+
+      // 5. 首次獲取實時 ETA 數據
+      fetchAndUpdateAllETA();
+
+      // 6. 設定每 30 秒自動更新一次
+      setInterval(fetchAndUpdateAllETA, 30000);
+
+      // 綁定所有點擊事件
+      initEventListeners();
+    });
+
+    // ==================== 時鐘與通知 ====================
+    function startClock() {
+      setInterval(() => {
+        const now = new Date();
+        domClock.textContent = now.toTimeString().split(' ')[0];
+      }, 1000);
+    }
+
+    function showToast(msg) {
+      domToastMsg.textContent = msg;
+      domToast.classList.remove('translate-y-10', 'opacity-0');
+      domToast.classList.add('translate-y-0', 'opacity-100');
+      setTimeout(() => {
+        domToast.classList.remove('translate-y-0', 'opacity-100');
+        domToast.classList.add('translate-y-10', 'opacity-0');
+      }, 3000);
+    }
+
+    // ==================== 預載所有九巴路線 ====================
+    async function preloadAllRoutes() {
+      try {
+        const response = await fetch(`${API_BASE}/route`);
+        const result = await response.json();
+        if (result.data && result.data.length > 0) {
+          allRoutes = result.data;
+          
+          // 更新頂部狀態指示燈為綠色
+          domStatusIndicator.className = "w-3 h-3 rounded-full bg-emerald-500 animate-pulse";
+          domStatusText.textContent = "KMB LIVE (已連線)";
+          console.log(`成功預載 ${allRoutes.length} 條九巴路線。`);
+        } else {
+          throw new Error("路線數據為空");
+        }
+      } catch (error) {
+        console.error("預載路線失敗:", error);
+        domStatusIndicator.className = "w-3 h-3 rounded-full bg-red-500";
+        domStatusText.textContent = "KMB LIVE (連線失敗)";
+        showToast("路線清單載入失敗，請重新整理網頁。");
+      }
+    }
+
+    // ==================== 事件綁定 ====================
+    function initEventListeners() {
+      // 打開/關閉設定視窗
+      btnToggleSettings.addEventListener('click', () => {
+        renderSettingsFavorites();
+        modalSettings.classList.remove('hidden');
+      });
+      btnCloseSettings.addEventListener('click', () => {
+        modalSettings.classList.add('hidden');
+        suggestionsBox.classList.add('hidden');
+      });
+      btnSaveConfirm.addEventListener('click', () => {
+        modalSettings.classList.add('hidden');
+        suggestionsBox.classList.add('hidden');
+        renderMainBoard();
+        fetchAndUpdateAllETA();
+      });
+
+      // 搜尋路線
+      btnSearch.addEventListener('click', () => {
+        suggestionsBox.classList.add('hidden');
+        searchRoute();
+      });
+      
+      inputRoute.addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') {
+          suggestionsBox.classList.add('hidden');
+          searchRoute();
+        }
+      });
+
+      // 當使用者輸入時，觸發自動建議
+      inputRoute.addEventListener('input', handleRouteInput);
+
+      // 點擊網頁外部，關閉自動建議選單
+      document.addEventListener('click', (e) => {
+        if (!inputRoute.contains(e.target) && !suggestionsBox.contains(e.target)) {
+          suggestionsBox.classList.add('hidden');
+        }
+      });
+
+      // 加入我的最愛
+      btnAddFav.addEventListener('click', addToFavorites);
+    }
+
+    // ==================== 路線輸入即時建議邏輯 ====================
+    function handleRouteInput() {
+      const query = inputRoute.value.trim().toUpperCase();
+      if (!query) {
+        suggestionsBox.classList.add('hidden');
+        return;
+      }
+
+      if (allRoutes.length === 0) {
+        return; // 數據庫尚未加載完成
+      }
+
+      // 1. 取得不重複的路線代號清單
+      const uniqueRouteNames = [...new Set(allRoutes.map(item => item.route))];
+
+      // 2. 進行搜尋過濾：優先篩選「以 query 開頭」的路線，再篩選「包含 query」的路線
+      const startsWithMatches = uniqueRouteNames.filter(r => r.startsWith(query));
+      const containsMatches = uniqueRouteNames.filter(r => r.includes(query) && !r.startsWith(query));
+      
+      // 合併排序，最多顯示 15 個建議
+      const combinedMatches = [...startsWithMatches, ...containsMatches].slice(0, 15);
+
+      if (combinedMatches.length > 0) {
+        suggestionsBox.innerHTML = combinedMatches.map(route => `
+          <div class="px-3 py-2.5 hover:bg-orange-600/20 active:bg-orange-600/40 cursor-pointer text-white font-mono font-bold border-b border-zinc-800/60 last:border-b-0 transition-colors"
+               onclick="selectSuggestion('${route}')">
+            ${route}
+          </div>
+        `).join('');
+        suggestionsBox.classList.remove('hidden');
+      } else {
+        suggestionsBox.classList.add('hidden');
+      }
+    }
+
+    // 當使用者點擊建議清單中的項目
+    window.selectSuggestion = function(route) {
+      inputRoute.value = route;
+      suggestionsBox.classList.add('hidden');
+      searchRoute(); // 自動觸發搜尋
+    };
+
+    // ==================== 搜尋巴士路線 (本地篩選) ====================
+    async function searchRoute() {
+      const route = inputRoute.value.trim().toUpperCase();
+      if (!route) {
+        showToast("請輸入巴士路線！");
+        return;
+      }
+
+      btnSearch.disabled = true;
+      btnSearch.textContent = "搜尋中...";
+
+      try {
+        // 如果先前載入失敗，再次嘗試載入
+        if (allRoutes.length === 0) {
+          await preloadAllRoutes();
+        }
+
+        // 直接在本地預載好的數組中篩選
+        const filteredRoutes = allRoutes.filter(item => item.route === route);
+
+        if (filteredRoutes.length > 0) {
+          currentRouteData = filteredRoutes;
+          showBoundSelection(filteredRoutes);
+        } else {
+          showToast(`找不到路線 ${route}，請檢查輸入是否正確（如 1A, 968）。`);
+          resetSearchSteps(false);
+        }
+      } catch (error) {
+        console.error("搜尋路線失敗:", error);
+        showToast("搜尋出錯，請確保網絡正常。");
+      } finally {
+        btnSearch.disabled = false;
+        btnSearch.textContent = "搜尋";
+      }
+    }
+
+    // 重置後續選擇步驟
+    function resetSearchSteps(resetInput = true) {
+      if (resetInput) inputRoute.value = "";
+      sectionBound.classList.add('hidden');
+      sectionStop.classList.add('hidden');
+      boundContainer.innerHTML = "";
+      selectStop.innerHTML = '<option value="">-- 請選擇車站 --</option>';
+      currentRouteData = null;
+      currentStops = [];
+    }
+
+    // ==================== 顯示方向選擇 ====================
+    function showBoundSelection(routeOptions) {
+      boundContainer.innerHTML = "";
+      sectionBound.classList.remove('hidden');
+      sectionStop.classList.add('hidden'); // 先隱藏第三步
+
+      routeOptions.forEach(opt => {
+        const boundText = opt.bound === 'O' ? '去程' : '回程';
+        const btn = document.createElement('button');
+        btn.className = "bg-zinc-800 hover:bg-orange-900 border border-zinc-700 text-white rounded-lg p-3 text-sm transition-colors text-left flex flex-col justify-between";
+        btn.innerHTML = `
+          <span class="text-xs text-zinc-400 font-bold">${boundText} (服務類型 ${opt.service_type})</span>
+          <span class="text-base text-orange-400 font-bold mt-1 truncate">${opt.dest_tc}</span>
+        `;
+        btn.addEventListener('click', () => {
+          // 選定方向，加載車站
+          selectBound(opt);
+          // 設選中樣式
+          Array.from(boundContainer.children).forEach(c => c.classList.remove('border-orange-500', 'bg-orange-950/40'));
+          btn.classList.add('border-orange-500', 'bg-orange-950/40');
+        });
+        boundContainer.appendChild(btn);
+      });
+    }
+
+    // ==================== 選擇方向，載入車站 (API) ====================
+    async function selectBound(routeOption) {
+      const { route, bound, service_type, dest_tc } = routeOption;
+      
+      selectStop.innerHTML = '<option value="">讀取車站中...</option>';
+      sectionStop.classList.remove('hidden');
+
+      try {
+        // 1. 抓取這條路線該方向的所有車站順序 (Route-Stop API)
+        const directionStr = bound === 'O' ? 'outbound' : 'inbound';
+        const urlStops = `${API_BASE}/route-stop/${route}/${directionStr}/${service_type}`;
+        const response = await fetch(urlStops);
+        const result = await response.json();
+
+        if (!result.data || result.data.length === 0) {
+          showToast("無法載入車站列表。");
+          return;
+        }
+        
+        selectStop.innerHTML = '<option value="">-- 請選擇車站 --</option>';
+        currentStops = [];
+
+        showToast("正在建立車站清單，請稍候...");
+        
+        // 限制只獲取前 50 個站，防止特別長途的路線卡死
+        const stopsToFetch = result.data.slice(0, 50);
+
+        // 批次下載車站名稱 (Promise.all)
+        const stopNamePromises = stopsToFetch.map(async (item) => {
+          try {
+            const stopRes = await fetch(`${API_BASE}/stop/${item.stop}`);
+            const stopData = await stopRes.json();
+            return {
+              seq: item.seq,
+              stopId: item.stop,
+              stopName: stopData.data ? stopData.data.name_tc : '未知車站',
+              route: route,
+              bound: bound,
+              serviceType: service_type,
+              destName: dest_tc
+            };
+          } catch(e) {
+            return { seq: item.seq, stopId: item.stop, stopName: '讀取失敗', route, bound, serviceType: service_type, destName: dest_tc };
+          }
+        });
+
+        currentStops = await Promise.all(stopNamePromises);
+
+        // 渲染到下拉選單
+        selectStop.innerHTML = '<option value="">-- 請選擇車站 --</option>';
+        currentStops.forEach(stop => {
+          const opt = document.createElement('option');
+          opt.value = stop.stopId;
+          opt.textContent = `${stop.seq}. ${stop.stopName}`;
+          selectStop.appendChild(opt);
+        });
+
+        showToast("車站載入完成！");
+
+      } catch (error) {
+        console.error("載入車站失敗:", error);
+        showToast("載入車站發生錯誤。");
+        selectStop.innerHTML = '<option value="">載入失敗</option>';
+      }
+    }
+
+    // ==================== 加入我的最愛 ====================
+    function addToFavorites() {
+      const selectedStopId = selectStop.value;
+      if (!selectedStopId) {
+        showToast("請先選擇上車車站！");
+        return;
+      }
+
+      const stopObj = currentStops.find(s => s.stopId === selectedStopId);
+      if (!stopObj) return;
+
+      // 檢查是否已存在
+      const isExist = favorites.some(fav => 
+        fav.route === stopObj.route && 
+        fav.bound === stopObj.bound && 
+        fav.stopId === stopObj.stopId &&
+        fav.serviceType === stopObj.serviceType
+      );
+
+      if (isExist) {
+        showToast("此車站路線已在「我的最愛」中！");
+        return;
+      }
+
+      // 新增至最愛
+      favorites.push({
+        route: stopObj.route,
+        bound: stopObj.bound,
+        boundName: stopObj.destName,
+        stopId: stopObj.stopId,
+        stopName: stopObj.stopName,
+        serviceType: stopObj.serviceType
+      });
+
+      // 儲存
+      saveFavorites();
+      renderSettingsFavorites();
+      resetSearchSteps(true);
+      showToast("成功加入我的最愛！");
+    }
+
+    // 儲存至本地瀏覽器
+    function saveFavorites() {
+      localStorage.setItem('desktop_bus_favorites', JSON.stringify(favorites));
+    }
+
+    // 渲染設定畫面中的最愛清單
+    function renderSettingsFavorites() {
+      if (favorites.length === 0) {
+        favoriteList.innerHTML = `<p class="text-zinc-600 text-xs text-center py-4">暫無儲存路線</p>`;
+        return;
+      }
+
+      favoriteList.innerHTML = "";
+      favorites.forEach((fav, index) => {
+        const item = document.createElement('div');
+        item.className = "flex justify-between items-center bg-zinc-800 border border-zinc-700/60 p-3 rounded-lg";
+        item.innerHTML = `
+          <div class="flex-1 min-w-0 pr-2">
+            <div class="flex items-center gap-2">
+              <span class="bg-orange-600 text-white text-xs font-black px-1.5 py-0.5 rounded font-mono">${fav.route}</span>
+              <span class="text-xs text-zinc-400 truncate">往 ${fav.boundName}</span>
+            </div>
+            <div class="text-sm font-semibold text-zinc-100 truncate mt-1">
+              <i class="fa-solid fa-location-dot text-zinc-500 text-xs mr-1"></i>${fav.stopName}
+            </div>
+          </div>
+          <button class="text-zinc-500 hover:text-red-500 p-2 transition-colors" onclick="deleteFavorite(${index})">
+            <i class="fa-solid fa-trash-can"></i>
+          </button>
+        `;
+        favoriteList.appendChild(item);
+      });
+    }
+
+    // 刪除最愛
+    window.deleteFavorite = function(index) {
+      favorites.splice(index, 1);
+      saveFavorites();
+      renderSettingsFavorites();
+      showToast("已刪除該路線。");
+    };
+
+    // ==================== 主報站畫面渲染（自適應字體） ====================
+    function renderMainBoard() {
+      if (favorites.length === 0) {
+        domNoDataTip.classList.remove('hidden');
+        const cards = domMainDisplay.querySelectorAll('.bus-card');
+        cards.forEach(c => c.remove());
+        return;
+      }
+
+      domNoDataTip.classList.add('hidden');
+      domMainDisplay.innerHTML = "";
+
+      const count = favorites.length;
+      let cardHeightClass = "flex-1";
+      let routeTextSize = "text-5xl md:text-7xl";
+      let titleTextSize = "text-lg md:text-2xl";
+      let stopTextSize = "text-xs md:text-sm";
+      let etaTextSize = "text-4xl md:text-6xl";
+      let etaSubTextSize = "text-sm md:text-lg";
+
+      if (count === 1) {
+        routeTextSize = "text-7xl md:text-9xl";
+        titleTextSize = "text-2xl md:text-4xl";
+        stopTextSize = "text-sm md:text-lg";
+        etaTextSize = "text-6xl md:text-8xl";
+        etaSubTextSize = "text-lg md:text-2xl";
+      } else if (count === 2) {
+        routeTextSize = "text-6xl md:text-8xl";
+        titleTextSize = "text-xl md:text-3xl";
+        stopTextSize = "text-xs md:text-base";
+        etaTextSize = "text-5xl md:text-7xl";
+        etaSubTextSize = "text-base md:text-xl";
+      } else if (count >= 4) {
+        routeTextSize = "text-4xl md:text-5xl";
+        titleTextSize = "text-base md:text-xl";
+        stopTextSize = "text-[10px] md:text-xs";
+        etaTextSize = "text-3xl md:text-5xl";
+        etaSubTextSize = "text-xs md:text-sm";
+      }
+
+      favorites.forEach((fav, index) => {
+        const cardId = `bus-card-${index}`;
+        const card = document.createElement('div');
+        card.id = cardId;
+        card.className = `bus-card ${cardHeightClass} bg-zinc-950/80 border-l-4 border-orange-500 rounded-r-lg p-3 flex justify-between items-center transition-all duration-300 relative overflow-hidden`;
+        
+        card.innerHTML = `
+          <!-- 左側：巴士路線及目的地 -->
+          <div class="flex items-center gap-4 min-w-0 flex-1">
+            <div class="${routeTextSize} font-black led-text led-orange select-none tracking-tighter shrink-0 min-w-[2.2ch] text-center">
+              ${fav.route}
+            </div>
+            <div class="min-w-0 flex-1">
+              <div class="flex items-center gap-1 text-zinc-400">
+                <span class="text-xs px-1 bg-zinc-800 rounded font-semibold shrink-0">往</span>
+                <span class="${titleTextSize} font-bold text-zinc-100 truncate leading-tight">${fav.boundName}</span>
+              </div>
+              <div class="${stopTextSize} text-zinc-500 truncate mt-1 flex items-center gap-1">
+                <i class="fa-solid fa-location-dot text-[10px]"></i>
+                <span>${fav.stopName}</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- 右側：即時 ETA 倒數 -->
+          <div class="text-right shrink-0 pl-3 border-l border-zinc-900 flex flex-col justify-center min-w-[120px] md:min-w-[180px]">
+            <div class="leading-none">
+              <span id="eta-val-${index}" class="${etaTextSize} font-black led-text led-orange">--</span>
+              <span id="eta-unit-${index}" class="${etaSubTextSize} font-bold led-text led-orange ml-0.5">分鐘</span>
+            </div>
+            <div id="eta-next-${index}" class="text-[10px] md:text-xs text-zinc-500 font-mono mt-1 space-y-0.5">
+              載入中...
+            </div>
+          </div>
+        `;
+
+        domMainDisplay.appendChild(card);
+      });
+    }
+
+    // ==================== 獲取所有最愛路線的實時 ETA 數據 ====================
+    async function fetchAndUpdateAllETA() {
+      if (favorites.length === 0) return;
+
+      const now = new Date();
+      domLastUpdate.textContent = `最後更新: ${now.toTimeString().split(' ')[0]}`;
+
+      favorites.forEach(async (fav, index) => {
+        try {
+          const url = `${API_BASE}/eta/${fav.stopId}/${fav.route}/${fav.serviceType}`;
+          const response = await fetch(url);
+          const result = await response.json();
+
+          if (result.data && result.data.length > 0) {
+            const direction = fav.bound;
+            const etaList = result.data
+              .filter(item => item.dir === direction)
+              .sort((a, b) => a.eta_seq - b.eta_seq);
+
+            updateCardETA(index, etaList);
+          } else {
+            setCardOffline(index, "暫無班次");
+          }
+        } catch (error) {
+          console.error(`獲取 ${fav.route} ETA 失敗:`, error);
+          setCardOffline(index, "連線錯誤");
+        }
+      });
+    }
+
+    // ==================== 更新單張巴士牌的實時時間 ====================
+    function updateCardETA(index, etaList) {
+      const valDom = document.getElementById(`eta-val-${index}`);
+      const unitDom = document.getElementById(`eta-unit-${index}`);
+      const nextDom = document.getElementById(`eta-next-${index}`);
+      const cardDom = document.getElementById(`bus-card-${index}`);
+
+      if (!valDom || !etaList || etaList.length === 0) {
+        setCardOffline(index, "沒有班次");
+        return;
+      }
+
+      const now = new Date();
+      const validEtas = [];
+
+      etaList.forEach(item => {
+        if (!item.eta) return;
+        
+        const etaTime = new Date(item.eta);
+        const diffMs = etaTime - now;
+        const diffMins = Math.max(0, Math.floor(diffMs / 1000 / 60));
+        
+        validEtas.push({
+          mins: diffMins,
+          rmk: item.rmk_tc || "",
+          timeStr: item.eta.split('T')[1].substring(0, 5)
+        });
+      });
+
+      if (validEtas.length === 0) {
+        setCardOffline(index, "未有資料");
+        return;
+      }
+
+      const firstBus = validEtas[0];
+      
+      // 當預計時間在 1 分鐘或以下，進入「即將到站」模式
+      if (firstBus.mins <= 1) {
+        // 修改重點：這裡同時在括號內顯示具體的分鐘數，方便用家精準預算步行時間
+        valDom.textContent = `即將到站 (${firstBus.mins}分)`;
+        // 微調字體大小，避免長文字溢出
+        valDom.className = "text-xl md:text-3xl lg:text-4xl font-black led-text led-green animate-pulse";
+        unitDom.style.display = "none";
+        
+        cardDom.classList.remove('border-orange-500');
+        cardDom.classList.add('border-emerald-500');
+      } else {
+        valDom.textContent = firstBus.mins;
+        valDom.className = "text-4xl md:text-7xl font-black led-text led-orange";
+        unitDom.style.display = "inline";
+        unitDom.className = "text-sm md:text-lg font-bold led-text led-orange ml-0.5";
+        
+        cardDom.classList.remove('border-emerald-500');
+        cardDom.classList.add('border-orange-500');
+      }
+
+      let nextHtml = "";
+      for (let i = 1; i < Math.min(3, validEtas.length); i++) {
+        const bus = validEtas[i];
+        const rmkText = bus.rmk ? ` (${bus.rmk})` : "";
+        nextHtml += `
+          <div class="flex justify-end gap-2 text-zinc-400">
+            <span>下班: <b class="text-zinc-200 font-bold">${bus.timeStr}</b></span>
+            <span class="text-orange-500/80 font-bold">${bus.mins}分${rmkText}</span>
+          </div>
+        `;
+      }
+
+      if (nextHtml === "") {
+        nextDom.innerHTML = `<span class="text-zinc-600">後面暫無班次</span>`;
+      } else {
+        nextDom.innerHTML = nextHtml;
+      }
+    }
+
+    function setCardOffline(index, msg) {
+      const valDom = document.getElementById(`eta-val-${index}`);
+      const unitDom = document.getElementById(`eta-unit-${index}`);
+      const nextDom = document.getElementById(`eta-next-${index}`);
+      const cardDom = document.getElementById(`bus-card-${index}`);
+
+      if (valDom) {
+        valDom.textContent = msg;
+        valDom.className = "text-xl md:text-2xl font-bold text-zinc-600";
+        if (unitDom) unitDom.style.display = "none";
+        if (nextDom) nextDom.innerHTML = `<span class="text-zinc-700">無法獲取數據</span>`;
+        if (cardDom) {
+          cardDom.classList.remove('border-orange-500', 'border-emerald-500');
+          cardDom.classList.add('border-zinc-800');
+        }
+      }
+    }
+  </script>
+</body>
+</html>
