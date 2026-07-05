@@ -70,17 +70,17 @@
       <!-- 九巴 -->
       <div id="status-kmb" class="flex items-center gap-1 bg-zinc-900 px-2 py-0.5 rounded border border-zinc-800 transition-all duration-300">
         <span id="dot-kmb" class="w-2 h-2 rounded-full bg-orange-500 animate-pulse transition-all duration-300"></span>
-        <span class="font-bold text-amber-500 transition-all duration-300">KMB (載入中)</span>
+        <span id="label-kmb" class="font-bold text-amber-500 transition-all duration-300">KMB (載入中)</span>
       </div>
       <!-- 城巴 -->
       <div id="status-ctb" class="flex items-center gap-1 bg-zinc-900 px-2 py-0.5 rounded border border-zinc-800 transition-all duration-300">
         <span id="dot-ctb" class="w-2 h-2 rounded-full bg-orange-500 animate-pulse transition-all duration-300"></span>
-        <span class="font-bold text-amber-500 transition-all duration-300">CTB (載入中)</span>
+        <span id="label-ctb" class="font-bold text-amber-500 transition-all duration-300">CTB (載入中)</span>
       </div>
       <!-- 嶼巴 -->
       <div id="status-nlb" class="flex items-center gap-1 bg-zinc-900 px-2 py-0.5 rounded border border-zinc-800 transition-all duration-300">
         <span id="dot-nlb" class="w-2 h-2 rounded-full bg-orange-500 animate-pulse transition-all duration-300"></span>
-        <span class="font-bold text-amber-500 transition-all duration-300">NLB (載入中)</span>
+        <span id="label-nlb" class="font-bold text-amber-500 transition-all duration-300">NLB (載入中)</span>
       </div>
     </div>
 
@@ -289,6 +289,7 @@
     function getSafeStopName(item) {
       if (!item) return '未知車站';
       return item.stopName_tc || 
+             item.stopName_c || 
              item.stop_name_tc || 
              item.name_tc || 
              item.stopName_en || 
@@ -298,20 +299,21 @@
              '未知車站';
     }
 
-    // 🌟 100% 避開正則表達式相容性地雷，相容 iPad/行動裝置內核
+    // 🌟 100% 避開正則表達式相容性地雷，採用純字串檢索拆分，支援全港與嶼巴各式減號、空格或大於號
     function splitRouteName(name) {
       if (!name || typeof name !== 'string') return { orig: '起點', dest: '目的地' };
       
       // 依序偵測各種常見的分隔符號
       const splitters = [' - ', '－', '-', '–', '—', ' > ', '＞', '→', ' 往 ', '往', ' / ', '/'];
-      for (const splitter of splitters) {
-        if (name.includes(splitter)) {
+      for (let i = 0; i < splitters.length; i++) {
+        const splitter = splitters[i];
+        if (name.indexOf(splitter) !== -1) {
           const parts = name.split(splitter);
           if (parts.length >= 2) {
             const orig = parts[0].trim();
             const dest = parts[parts.length - 1].trim();
-            if (orig && dest) {
-              return { orig, dest };
+            if (orig && dest && orig !== 'undefined' && dest !== 'undefined' && orig !== '' && dest !== '') {
+              return { orig: orig, dest: dest };
             }
           }
         }
@@ -321,20 +323,24 @@
 
     function getSafeRouteOrig(r) {
       if (!r) return '起點';
-      let orig = r.orig_tc || r.orig || r.startPoint_tc;
-      if (orig && orig !== '起點' && orig !== 'undefined') return orig;
+      let orig = r.orig_tc || r.orig_zh || r.orig || r.startPoint_tc || r.startPoint_zh || r.startPointZh || r.startPoint;
+      if (orig && orig !== '起點' && orig !== 'undefined' && String(orig).trim() !== '') {
+        return String(orig).trim();
+      }
       
-      let name = r.routeName_tc || r.routeName_sc || r.routeName_en || r.routeName || '';
+      let name = r.routeName_tc || r.routeName_c || r.routeName_zh || r.routeName_sc || r.routeName_s || r.routeName_en || r.routeName || '';
       const split = splitRouteName(name);
       return split.orig;
     }
 
     function getSafeRouteDest(r) {
       if (!r) return '目的地';
-      let dest = r.dest_tc || r.dest || r.destination_tc;
-      if (dest && dest !== '目的地' && dest !== 'undefined') return dest;
+      let dest = r.dest_tc || r.dest_zh || r.dest || r.destination_tc || r.destination_zh || r.destinationZh || r.destination;
+      if (dest && dest !== '目的地' && dest !== 'undefined' && String(dest).trim() !== '') {
+        return String(dest).trim();
+      }
       
-      let name = r.routeName_tc || r.routeName_sc || r.routeName_en || r.routeName || '';
+      let name = r.routeName_tc || r.routeName_c || r.routeName_zh || r.routeName_sc || r.routeName_s || r.routeName_en || r.routeName || '';
       const split = splitRouteName(name);
       return split.dest;
     }
@@ -343,7 +349,7 @@
     function updateCompanyStatus(co, state) {
       const dot = document.getElementById(`dot-${co.toLowerCase()}`);
       const container = document.getElementById(`status-${co.toLowerCase()}`);
-      const label = container ? container.querySelector('span:not([id])') : null;
+      const label = document.getElementById(`label-${co.toLowerCase()}`);
 
       if (!dot || !container || !label) return;
 
@@ -366,7 +372,7 @@
 
       // 如果在大字模式下微調字體
       if (isZoomedTop) {
-        label.classList.remove('text-[10px]', 'md:text-xs');
+        label.className = label.className.replace(/text-\[10px\]/g, '').replace(/md:text-xs/g, '');
         label.classList.add('text-xs', 'md:text-base');
       }
     }
@@ -456,22 +462,15 @@
         if (!res.ok) throw new Error("NLB HTTP error");
         const json = await res.json();
         if (json.routes && json.routes.length > 0) {
-          const mapped = json.routes.map(r => {
-            const mappedRoute = {
-              co: 'NLB',
-              route: r.routeNo,
-              routeId: r.routeId,
-              orig: getSafeRouteOrig(r),
-              dest: getSafeRouteDest(r), 
-              bound: r.routeId, // 🌟 嶼巴去回程完全獨立，直接以 routeId 作為 bound 避免被合併！
-              serviceType: '1'
-            };
-            // 除錯輸出以確認 B2P 資料解析
-            if (r.routeNo === 'B2P') {
-              console.log("[除錯 B2P 原始]:", r, "[解析後結果]:", mappedRoute);
-            }
-            return mappedRoute;
-          });
+          const mapped = json.routes.map(r => ({
+            co: 'NLB',
+            route: r.routeNo,
+            routeId: r.routeId,
+            orig: getSafeRouteOrig(r),
+            dest: getSafeRouteDest(r), 
+            bound: r.routeId, // 🌟 嶼巴去回程完全獨立，直接以 routeId 作為 bound 避免被合併！
+            serviceType: '1'
+          }));
           
           allRoutes = allRoutes.filter(r => r.co !== 'NLB').concat(mapped);
           states.NLB.loaded = true;
@@ -616,12 +615,12 @@
       }
 
       const uniqueRoutes = [];
-      const seen = new Set();
+      const seen = {};
 
       allRoutes.forEach(r => {
         const key = `${r.co}_${r.route}`;
-        if (!seen.has(key) && r.route.startsWith(query)) {
-          seen.add(key);
+        if (!seen[key] && r.route.indexOf(query) === 0) {
+          seen[key] = true;
           uniqueRoutes.push(r);
         }
       });
@@ -629,8 +628,8 @@
       if (uniqueRoutes.length < 10) {
         allRoutes.forEach(r => {
           const key = `${r.co}_${r.route}`;
-          if (!seen.has(key) && r.route.includes(query)) {
-            seen.add(key);
+          if (!seen[key] && r.route.indexOf(query) !== -1) {
+            seen[key] = true;
             uniqueRoutes.push(r);
           }
         });
@@ -774,17 +773,24 @@
       sectionStop.classList.add('hidden');
 
       const mergedOptions = [];
-      const seenKeys = new Set();
+      const seenKeys = {};
 
       routeOptions.forEach(opt => {
         const destTrimmed = opt.dest ? opt.dest.trim() : "";
         const key = `${opt.co}_${opt.bound}_${destTrimmed}`;
         
-        if (!seenKeys.has(key)) {
-          seenKeys.add(key);
+        if (!seenKeys[key]) {
+          seenKeys[key] = true;
           mergedOptions.push(opt);
         } else {
-          const existingIndex = mergedOptions.findIndex(o => `${o.co}_${o.bound}_${o.dest ? o.dest.trim() : ""}` === key);
+          let existingIndex = -1;
+          for (let mIdx = 0; mIdx < mergedOptions.length; mIdx++) {
+            const o = mergedOptions[mIdx];
+            if (`${o.co}_${o.bound}_${o.dest ? o.dest.trim() : ""}` === key) {
+              existingIndex = mIdx;
+              break;
+            }
+          }
           if (existingIndex !== -1) {
             const existing = mergedOptions[existingIndex];
             const currentType = parseInt(opt.serviceType) || 1;
@@ -968,21 +974,39 @@
           
           if (matchingNLBRoutes.length > 0) {
             console.log(`[自癒] 發現受損或舊版嶼巴路線 ${fav.route}，正在聯網核對車站...`);
-            for (const r of matchingNLBRoutes) {
+            for (let rIdx = 0; rIdx < matchingNLBRoutes.length; rIdx++) {
+              const r = matchingNLBRoutes[rIdx];
               try {
                 const res = await fetch(`${API_NLB_BASE}/stop.php?action=list&routeId=${r.routeId}`);
                 const json = await res.json();
-                if (json.stops && json.stops.some(s => s.stopId === fav.stopId)) {
-                  fav.routeId = r.routeId;
-                  fav.bound = r.routeId; 
-                  fav.boundName = r.dest; 
+                
+                if (json.stops) {
+                  let hasStop = false;
+                  let stopIndex = -1;
+                  for (let sIdx = 0; sIdx < json.stops.length; sIdx++) {
+                    if (json.stops[sIdx].stopId === fav.stopId) {
+                      hasStop = true;
+                      stopIndex = sIdx;
+                      break;
+                    }
+                  }
                   
-                  const stopIndex = json.stops.findIndex(s => s.stopId === fav.stopId);
-                  fav.viaStops = json.stops.slice(stopIndex + 1, stopIndex + 4).map(s => getSafeStopName(s));
-                  
-                  updated = true;
-                  console.log(`[自動修復成功] 成功將嶼巴 ${fav.route} 修復為：往 ${fav.boundName} (routeId: ${fav.routeId})`);
-                  break;
+                  if (hasStop) {
+                    fav.routeId = r.routeId;
+                    fav.bound = r.routeId; 
+                    fav.boundName = r.dest; 
+                    
+                    // 填補途經車站
+                    fav.viaStops = [];
+                    const sliceEnd = Math.min(stopIndex + 4, json.stops.length);
+                    for (let sIdx = stopIndex + 1; sIdx < sliceEnd; sIdx++) {
+                      fav.viaStops.push(getSafeStopName(json.stops[sIdx]));
+                    }
+                    
+                    updated = true;
+                    console.log(`[自動修復成功] 成功將嶼巴 ${fav.route} 修復為：往 ${fav.boundName} (routeId: ${fav.routeId})`);
+                    break;
+                  }
                 }
               } catch(e) { 
                 console.error("嶼巴背景匹配個別路線時出錯:", e); 
@@ -1038,9 +1062,19 @@
             }
 
             if (fetchedStops.length > 0) {
-              const stopIndex = fetchedStops.slice().findIndex(s => s.stopId === fav.stopId);
+              let stopIndex = -1;
+              for (let j = 0; j < fetchedStops.length; j++) {
+                if (fetchedStops[j].stopId === fav.stopId) {
+                  stopIndex = j;
+                  break;
+                }
+              }
               if (stopIndex !== -1) {
-                fav.viaStops = fetchedStops.slice(stopIndex + 1, stopIndex + 4).map(s => s.stopName);
+                fav.viaStops = [];
+                const sliceEnd = Math.min(stopIndex + 4, fetchedStops.length);
+                for (let j = stopIndex + 1; j < sliceEnd; j++) {
+                  fav.viaStops.push(fetchedStops[j].stopName);
+                }
                 updated = true;
               }
             }
@@ -1315,11 +1349,12 @@
         const diffMins = Math.max(0, Math.floor(diffMs / 1000 / 60));
         
         let timePart = "00:00";
-        const timeMatch = item.eta.match(/(\d{2}:\d{2})/);
+        const etaStr = String(item.eta);
+        const timeMatch = etaStr.match(/(\d{2}:\d{2})/);
         if (timeMatch) {
           timePart = timeMatch[1];
         } else {
-          timePart = item.eta.includes('T') ? item.eta.split('T')[1].substring(0, 5) : item.eta.split(' ')[1].substring(0, 5);
+          timePart = etaStr.indexOf('T') !== -1 ? etaStr.split('T')[1].substring(0, 5) : etaStr.split(' ')[1].substring(0, 5);
         }
 
         validEtas.push({
